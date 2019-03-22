@@ -1,0 +1,3 @@
+[submodule "oh-my-gosh-bericht"]
+	path = doc
+	url = https://github.engineering.zhaw.ch/neut/oh-my-gosh-bericht.git
