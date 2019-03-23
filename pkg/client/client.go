@@ -1,17 +1,15 @@
 package client
 
 import (
+	"../common"
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
-)
-
-const (
-	TCP = "tcp"
-	UDP = "udp"
+	"syscall"
 )
 
 type Client struct {
@@ -19,30 +17,65 @@ type Client struct {
 	conn    net.Conn
 }
 
-func CreateClient(network string, address string, port int64) (Client, error) {
-	addrStr := network + "://" + address + ":" + strconv.FormatInt(port, 10)
+func NewClient(protocol string, address string, port int) (Client, error) {
+	if port < 0 {
+		return Client{}, errors.New("port cannot be negative")
+	}
+	if address == "" {
+		return Client{}, errors.New("address cannot be empty")
+	}
+	addrStr := protocol + "://" + address + ":" + strconv.Itoa(port)
 	reqUrl, err := url.ParseRequestURI(addrStr)
-	return Client{reqUrl, nil}, err
+	if err != nil {
+		return Client{}, err
+	}
+	if reqUrl.Scheme != common.TCP &&
+		reqUrl.Scheme != common.TCP4 &&
+		reqUrl.Scheme != common.TCP6 &&
+		reqUrl.Scheme != common.UNIX &&
+		reqUrl.Scheme != common.UNIXPACKET {
+		return Client{}, errors.New("protocol has to be either tcp, tcp4, tcp6, unix or unixpacket")
+	}
+	return Client{address: reqUrl}, nil
 }
 
-func (client Client) Connect() {
-	conn, _ := net.Dial(client.address.Scheme, client.address.Host)
+func (client Client) Connect() (net.Conn, error) {
+	conn, err := net.Dial(client.address.Scheme, client.address.Host)
+	if err != nil {
+		return nil, err
+	}
 	client.conn = conn
+	return conn, nil
 }
 
-func main() {
+func TextExchangeLocal(protocol string, address string, port int) {
+	client, err := NewClient(protocol, address, port)
+	if err != nil {
+		fmt.Println(err.Error())
+		syscall.Exit(1)
+	}
+	fmt.Println("Initialized client.")
 
-	// connect to this socket
-	conn, _ := net.Dial("tcp", "127.0.0.1:8081")
+	conn, err := client.Connect()
+	if err != nil {
+		fmt.Println(err.Error())
+		syscall.Exit(1)
+	}
+	fmt.Println("Established connection to " + client.address.String())
+
 	for {
 		// read in input from stdin
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Text to send: ")
-		text, _ := reader.ReadString('\n')
+		fmt.Print("> ")
+		text, err := reader.ReadString('\n')
 		// send to socket
-		fmt.Fprintf(conn, text+"\n")
+		_, err = fmt.Fprintln(conn, text)
+		if err != nil {
+			fmt.Println("Connection died.")
+			break
+		}
 		// listen for reply
 		message, _ := bufio.NewReader(conn).ReadString('\n')
-		fmt.Print("Message from server: " + message)
+		fmt.Print("-> " + message)
 	}
 }
