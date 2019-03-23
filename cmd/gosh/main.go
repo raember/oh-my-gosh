@@ -1,8 +1,8 @@
 package main
 
 import (
-	"../../pkg/client"
-	"../../pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/client"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 )
 
 func main() {

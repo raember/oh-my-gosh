@@ -1,7 +1,7 @@
 package client
 
 import (
-	"../common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"strconv"
 	"testing"
 )
