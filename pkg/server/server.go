@@ -101,7 +101,7 @@ func TextReplyLocal(protocol string, port int) {
 			message = message + " \n"
 			log.WithFields(log.Fields{
 				"message": message,
-			}).Infoln("Outbound")
+			}).Debugln("Outbound")
 			_, _ = conn.Write([]byte(message))
 			//fmt.Print(message + " ")
 			input, err := bufio.NewReader(conn).ReadString('\n')
@@ -111,13 +111,13 @@ func TextReplyLocal(protocol string, port int) {
 			}
 			log.WithFields(log.Fields{
 				"input": input,
-			}).Infoln("Inbound")
+			}).Debugln("Inbound")
 			return input[:len(input)-1], nil
 		case pam.PromptEchoOn:
 			message = message + " \n"
 			log.WithFields(log.Fields{
 				"message": message,
-			}).Infoln("Outbound")
+			}).Debugln("Outbound")
 			_, _ = conn.Write([]byte(message))
 			//fmt.Print(message + " ")
 			input, err := bufio.NewReader(conn).ReadString('\n')
@@ -127,20 +127,20 @@ func TextReplyLocal(protocol string, port int) {
 			}
 			log.WithFields(log.Fields{
 				"input": input,
-			}).Infoln("Inbound")
+			}).Debugln("Inbound")
 			return input[:len(input)-1], nil
 		case pam.ErrorMsg:
 			message = message + " \n"
 			log.WithFields(log.Fields{
 				"message": message,
-			}).Infoln("Outbound")
+			}).Debugln("Outbound")
 			_, _ = conn.Write([]byte(message))
 			return "", nil
 		case pam.TextInfo:
 			message = message + " \n"
 			log.WithFields(log.Fields{
 				"message": message,
-			}).Infoln("Outbound")
+			}).Debugln("Outbound")
 			_, _ = conn.Write([]byte(message))
 			return "", nil
 		}

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"net"
 	"net/url"
@@ -16,6 +18,7 @@ import (
 type Client struct {
 	address *url.URL
 	conn    net.Conn
+	config  *viper.Viper
 }
 
 func NewClient(protocol string, address string, port int) (*Client, error) {
@@ -68,6 +71,22 @@ func (client Client) Connect() (net.Conn, error) {
 	return conn, nil
 }
 
+var config = viper.New()
+
+func init() {
+	config.SetConfigName(common.APPNAME + "_config")
+	config.AddConfigPath("/etc/" + common.APPNAME + "/")
+	config.SetConfigType(common.CONFIGFORMAT)
+	config.WatchConfig()
+	config.OnConfigChange(func(e fsnotify.Event) {
+		log.Warnln("Config file changed:", e.Name)
+	})
+	err := config.ReadInConfig()
+	if err != nil {
+		log.Fatalf("Couldn't read config file: %s\n", err)
+	}
+}
+
 func TextExchangeLocal(protocol string, address string, port int) {
 	client, err := NewClient(protocol, address, port)
 	if err != nil {
@@ -86,7 +105,7 @@ func TextExchangeLocal(protocol string, address string, port int) {
 		answer, _ := bufio.NewReader(conn).ReadString('\n')
 		log.WithFields(log.Fields{
 			"rawtext": answer,
-		}).Infoln("Inbound")
+		}).Debugln("Inbound")
 		log.Println(answer)
 
 		// read in input from stdin
@@ -95,7 +114,7 @@ func TextExchangeLocal(protocol string, address string, port int) {
 		message, err := reader.ReadString('\n')
 		log.WithFields(log.Fields{
 			"rawtext": message,
-		}).Infoln("Outbound")
+		}).Debugln("Outbound")
 		// send to socket
 		_, err = fmt.Fprintln(conn, message)
 		if err != nil {

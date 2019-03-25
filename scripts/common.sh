@@ -2,6 +2,7 @@
 
 # Go to project root folder and set some variables
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." > /dev/null 2>&1 && pwd)"
+eval "$($(whichgo)env)"
 if [[ -z "$GOPATH" ]]; then
     GOPATH="$(cd "./../../../.." > /dev/null 2>&1 && pwd)"
     echo "Assuming GOPATH=$GOPATH"
