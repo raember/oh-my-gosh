@@ -82,6 +82,13 @@ func TextExchangeLocal(protocol string, address string, port int) {
 	log.Infoln("Established connection to " + client.address.String())
 
 	for {
+		// listen for reply
+		answer, _ := bufio.NewReader(conn).ReadString('\n')
+		log.WithFields(log.Fields{
+			"rawtext": answer,
+		}).Infoln("Inbound")
+		log.Println(answer)
+
 		// read in input from stdin
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("> ")
@@ -95,10 +102,5 @@ func TextExchangeLocal(protocol string, address string, port int) {
 			log.Infoln("Connection died.")
 			break
 		}
-		// listen for reply
-		answer, _ := bufio.NewReader(conn).ReadString('\n')
-		log.WithFields(log.Fields{
-			"rawtext": answer,
-		}).Infoln("Inbound")
 	}
 }

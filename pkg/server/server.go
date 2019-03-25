@@ -3,8 +3,10 @@ package server
 import (
 	"bufio"
 	"errors"
+	"github.com/msteinert/pam"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"net"
 	"net/url"
 	"strconv"
@@ -92,6 +94,65 @@ func TextReplyLocal(protocol string, port int) {
 	conn, _ := ln.Accept()
 	log.Infoln("Connection established.")
 
+	login.Authenticate(func(s pam.Style, message string) (string, error) {
+		switch s {
+		case pam.PromptEchoOff:
+			//return speakeasy.Ask(message + " \n")
+			message = message + " \n"
+			log.WithFields(log.Fields{
+				"message": message,
+			}).Infoln("Outbound")
+			_, _ = conn.Write([]byte(message))
+			//fmt.Print(message + " ")
+			input, err := bufio.NewReader(conn).ReadString('\n')
+			if err != nil {
+				log.Infoln("Connection died.")
+				return "", err
+			}
+			log.WithFields(log.Fields{
+				"input": input,
+			}).Infoln("Inbound")
+			return input[:len(input)-1], nil
+		case pam.PromptEchoOn:
+			message = message + " \n"
+			log.WithFields(log.Fields{
+				"message": message,
+			}).Infoln("Outbound")
+			_, _ = conn.Write([]byte(message))
+			//fmt.Print(message + " ")
+			input, err := bufio.NewReader(conn).ReadString('\n')
+			if err != nil {
+				log.Infoln("Connection died.")
+				return "", err
+			}
+			log.WithFields(log.Fields{
+				"input": input,
+			}).Infoln("Inbound")
+			return input[:len(input)-1], nil
+		case pam.ErrorMsg:
+			message = message + " \n"
+			log.WithFields(log.Fields{
+				"message": message,
+			}).Infoln("Outbound")
+			_, _ = conn.Write([]byte(message))
+			return "", nil
+		case pam.TextInfo:
+			message = message + " \n"
+			log.WithFields(log.Fields{
+				"message": message,
+			}).Infoln("Outbound")
+			_, _ = conn.Write([]byte(message))
+			return "", nil
+		}
+		return "", errors.New("unrecognized message style")
+	})
+
+	message := "Authentication was successful\n"
+	log.WithFields(log.Fields{
+		"message": message,
+	}).Infoln("Outbound")
+	_, _ = conn.Write([]byte(message))
+
 	// run loop forever (or until ctrl-c)
 	for {
 		// will listen for message to process ending in newline (\n)
@@ -102,13 +163,13 @@ func TextReplyLocal(protocol string, port int) {
 		}
 		// output message received
 		log.WithFields(log.Fields{
-			"rawtext": message,
+			"message": message,
 		}).Infoln("Inbound")
 		// sample process for string received
 		answer := strings.ToUpper(message)
 		// send new string back to client
 		log.WithFields(log.Fields{
-			"rawtext": answer,
+			"answer": answer,
 		}).Infoln("Outbound")
 		_, _ = conn.Write([]byte(answer))
 	}
