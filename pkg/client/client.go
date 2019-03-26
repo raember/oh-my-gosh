@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
@@ -69,22 +68,6 @@ func (client Client) Connect() (net.Conn, error) {
 	}
 	client.conn = conn
 	return conn, nil
-}
-
-var config = viper.New()
-
-func init() {
-	config.SetConfigName(common.APPNAME + "_config")
-	config.AddConfigPath("/etc/" + common.APPNAME + "/")
-	config.SetConfigType(common.CONFIGFORMAT)
-	config.WatchConfig()
-	config.OnConfigChange(func(e fsnotify.Event) {
-		log.Warnln("Config file changed:", e.Name)
-	})
-	err := config.ReadInConfig()
-	if err != nil {
-		log.Fatalf("Couldn't read config file: %s\n", err)
-	}
 }
 
 func TextExchangeLocal(protocol string, address string, port int) {

@@ -14,7 +14,8 @@ const (
 	UNIXPACKET   = "unixpacket"
 	LOCALHOST    = "localhost"
 	PORT         = 2222
-	APPNAME      = "goshd"
+	CLIENTNAME   = "gosh"
+	SERVERNAME   = "goshd"
 	CONFIGFORMAT = "toml"
 )
 

@@ -5,6 +5,17 @@
 # possible, but leave them commented. Uncommented options override the
 # default value.
 
-[server]
-port = 22
-connections = 5
+[Server]
+Port = 2222
+Hostkeys = [
+    "/etc/gosh/host_key"
+]
+
+[Logging]
+LogLevel = info
+
+[Authentication]
+LoginGraceTime = 120
+PermitRootLogin = false
+MaxTries = 6
+MaxSessions = 10

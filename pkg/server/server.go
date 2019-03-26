@@ -92,7 +92,9 @@ func TextReplyLocal(protocol string, port int) {
 
 	// accept connection on port
 	conn, _ := ln.Accept()
-	log.Infoln("Connection established.")
+	log.WithFields(log.Fields{
+		"remoteaddress": conn.RemoteAddr(),
+	}).Infoln("Connection established.")
 
 	login.Authenticate(func(s pam.Style, message string) (string, error) {
 		switch s {
