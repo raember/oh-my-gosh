@@ -10,13 +10,15 @@ import (
 var config = viper.New()
 
 func setDefaults(config *viper.Viper) {
-	config.SetDefault("Client.Port", 2222)
+	config.SetDefault("Client.Port", common.PORT)
+	config.SetDefault("Client.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
 }
 
 func init() {
 	config.SetConfigName(common.CLIENTNAME + "_config")
 	config.AddConfigPath("/etc/" + common.CLIENTNAME + "/")
+	config.AddConfigPath("../../configs")
 	config.SetConfigType(common.CONFIGFORMAT)
 	setDefaults(config)
 	err := config.ReadInConfig()
@@ -31,4 +33,8 @@ func init() {
 			"name": e.Name,
 		}).Warnln("Config file changed.")
 	})
+}
+
+func Config() *viper.Viper {
+	return config
 }

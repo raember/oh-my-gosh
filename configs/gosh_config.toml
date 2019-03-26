@@ -7,6 +7,7 @@
 
 [Client]
 Port = 2222
+Protocol = "tcp"
 
 [Logging]
 LogLevel = "info"
