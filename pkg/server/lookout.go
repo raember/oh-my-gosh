@@ -67,7 +67,6 @@ func (lookout Lookout) Listen() (net.Listener, error) {
 		}).Fatalln("Couldn't setup listener.")
 		return nil, err
 	}
-	defer listener.Close()
 	log.WithFields(log.Fields{
 		"address": listener.Addr(),
 	}).Infoln("Listening for incoming requests.")

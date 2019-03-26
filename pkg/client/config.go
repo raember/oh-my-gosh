@@ -18,6 +18,7 @@ func setDefaults(config *viper.Viper) {
 func init() {
 	config.SetConfigName(common.CLIENTNAME + "_config")
 	config.AddConfigPath("/etc/" + common.CLIENTNAME + "/")
+	config.AddConfigPath("./configs")
 	config.AddConfigPath("../../configs")
 	config.SetConfigType(common.CONFIGFORMAT)
 	setDefaults(config)

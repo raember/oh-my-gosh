@@ -5,14 +5,21 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func Authenticate(callback func(s pam.Style, msg string) (string, error)) {
-	t, err := pam.StartFunc("", "", callback)
+func Authenticate(callback func(s pam.Style, msg string) (string, error)) (*pam.Transaction, error) {
+	transaction, err := pam.StartFunc("", "", callback)
 	if err != nil {
-		log.Fatalf("Start: %s", err.Error())
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Errorln("Couldn't start authentication.")
+		return nil, err
 	}
-	err = t.Authenticate(0)
+	err = transaction.Authenticate(0)
 	if err != nil {
-		log.Fatalf("Authenticate: %s", err.Error())
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Errorln("Couldn't authenticate.")
+		return nil, err
 	}
 	log.Infoln("Authentication succeeded!")
+	return transaction, nil
 }
