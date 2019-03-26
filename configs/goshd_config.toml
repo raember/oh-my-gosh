@@ -12,7 +12,7 @@ Hostkeys = [
 ]
 
 [Logging]
-LogLevel = info
+LogLevel = "info"
 
 [Authentication]
 LoginGraceTime = 120

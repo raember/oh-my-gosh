@@ -9,4 +9,4 @@
 Port = 2222
 
 [Logging]
-LogLevel = info
+LogLevel = "info"
