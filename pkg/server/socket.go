@@ -85,7 +85,7 @@ func (socket Socket) Listen() error {
 		log.WithFields(log.Fields{
 			"remoteaddress": conn.RemoteAddr(),
 		}).Infoln("Connection established.")
-		server := Server{conn: conn}
-		go server.Serve()
+		server := Server{}
+		go server.Serve(conn)
 	}
 }

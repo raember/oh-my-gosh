@@ -11,5 +11,7 @@ for dir in $CMD_FOLDER/*; do
     GOPATH="$GOPATH" go build -o "$BUILD_FOLDER/$pkg" -i "$CMD_FOLDER/$pkg/main.go"
     if (($? > 0)); then
         echo_error "Failed building $pkg"
+        else:
+        mkdir -p
     fi
 done

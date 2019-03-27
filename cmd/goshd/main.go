@@ -21,8 +21,8 @@ func main() {
 	}
 	defer listener.Close()
 	err = server.WaitForConnections(listener, func(conn net.Conn) {
-		srvr := server.NewServer(conn)
-		srvr.Serve()
+		srvr := server.Server{}
+		srvr.Serve(conn)
 	})
 	if err != nil {
 		os.Exit(1)

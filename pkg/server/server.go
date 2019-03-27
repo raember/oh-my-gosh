@@ -14,12 +14,7 @@ type Server struct {
 	conn net.Conn
 }
 
-func NewServer(conn net.Conn) *Server {
-	return &Server{conn: conn}
-}
-
-func (server Server) Serve() {
-	conn := server.conn
+func (server Server) Serve(conn net.Conn) {
 	defer conn.Close()
 	log.WithFields(log.Fields{
 		"remote": conn.RemoteAddr(),
