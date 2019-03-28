@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/tls"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
@@ -52,7 +53,8 @@ func NewDialer(protocol string, address string, port int) (*Dialer, error) {
 
 func (dialer Dialer) Dial() (net.Conn, error) {
 	address := dialer.address
-	conn, err := net.Dial(address.Scheme, address.Host)
+	tlsConfig := &tls.Config{InsecureSkipVerify: true}
+	conn, err := tls.Dial(address.Scheme, address.Host, tlsConfig)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"protocol": address.Scheme,
@@ -61,5 +63,8 @@ func (dialer Dialer) Dial() (net.Conn, error) {
 		}).Errorln("Couldn't connect to host.")
 		return nil, err
 	}
+	log.WithFields(log.Fields{
+		"remote": common.AddrToStr(conn.RemoteAddr()),
+	}).Infoln("Connection established.")
 	return conn, nil
 }

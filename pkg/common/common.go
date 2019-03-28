@@ -2,6 +2,7 @@ package common
 
 import (
 	log "github.com/sirupsen/logrus"
+	"net"
 	"os"
 	"strings"
 )
@@ -17,6 +18,9 @@ const (
 	CLIENTNAME   = "gosh"
 	SERVERNAME   = "goshd"
 	CONFIGFORMAT = "toml"
+	CERTFILE     = "/etc/gosh/certificate.pem"
+	KEYFILE      = "/etc/gosh/key.pem"
+	CONFIGPATH   = "/etc/gosh"
 )
 
 func init() {
@@ -33,4 +37,8 @@ func init() {
 	// set global log level
 	log.SetLevel(ll)
 	log.SetFormatter(&log.TextFormatter{ForceColors: true})
+}
+
+func AddrToStr(addr net.Addr) string {
+	return addr.Network() + "://" + addr.String()
 }

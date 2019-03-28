@@ -8,9 +8,6 @@
 [Server]
 Port = 2222
 Protocol = "tcp"
-Hostkeys = [
-    "/etc/gosh/host_key"
-]
 
 [Logging]
 LogLevel = "info"

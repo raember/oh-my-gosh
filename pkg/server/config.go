@@ -7,15 +7,10 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 )
 
-var config = viper.New()
-
 func setDefaults(config *viper.Viper) {
 	config.SetDefault("Server.Port", common.PORT)
 	config.SetDefault("Server.Protocol", common.TCP)
-	config.SetDefault("Server.HostKeys", "/etc/gosh/host_key")
 	config.SetDefault("Logging.LogLevel", "info")
-	config.SetDefault("Authentication.Certificate", "../../test/certificate.pem")
-	config.SetDefault("Authentication.KeyFile", "../../test/key.pem")
 	config.SetDefault("Authentication.LoginGraceTime", 120)
 	config.SetDefault("Authentication.PermitRootLogin", false)
 	config.SetDefault("Authentication.MaxTries", 6)
@@ -23,10 +18,12 @@ func setDefaults(config *viper.Viper) {
 }
 
 func init() {
+}
+
+func Config(configpath string) *viper.Viper {
+	config := viper.New()
 	config.SetConfigName(common.SERVERNAME + "_config")
-	config.AddConfigPath("/etc/" + common.SERVERNAME + "/")
-	config.AddConfigPath("./configs")
-	config.AddConfigPath("../../configs")
+	config.AddConfigPath(configpath)
 	config.SetConfigType(common.CONFIGFORMAT)
 	setDefaults(config)
 	err := config.ReadInConfig()
@@ -41,8 +38,5 @@ func init() {
 			"name": e.Name,
 		}).Warnln("Config file changed.")
 	})
-}
-
-func Config() *viper.Viper {
 	return config
 }

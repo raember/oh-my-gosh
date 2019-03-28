@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/msteinert/pam"
 	log "github.com/sirupsen/logrus"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"net"
 	"strings"
@@ -17,61 +18,44 @@ type Server struct {
 func (server Server) Serve(conn net.Conn) {
 	defer conn.Close()
 	log.WithFields(log.Fields{
-		"remote": conn.RemoteAddr(),
+		"remote": common.AddrToStr(conn.RemoteAddr()),
 	}).Debugln("Serving new connection.")
-	readwriter := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	client := bufio.NewReader(conn)
 
-	transaction, err := login.Authenticate(func(style pam.Style, message string) (string, error) {
+	transaction, err := login.Authenticate(func(style pam.Style, outBound string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
-			//return speakeasy.Ask(message + " \n")
-			message = message
-			log.WithFields(log.Fields{
-				"message": message,
-			}).Debugln("Outbound")
-			_, _ = readwriter.WriteString(message + " \n")
-			//fmt.Print(message + " ")
-			input, err := readwriter.ReadString('\n')
+			//return speakeasy.Ask(outBound)
+			outBound += " \n"
+			_, _ = conn.Write([]byte(outBound))
+			inBound, err := client.ReadString('\n')
 			if err != nil {
 				log.Infoln("Connection died.")
 				return "", err
 			}
-			log.WithFields(log.Fields{
-				"input": input,
-			}).Debugln("Inbound")
-			return input[:len(input)-1], nil
+			log.WithFields(log.Fields{"inBound": inBound}).Debugln("Received message.")
+			return inBound[:len(inBound)-1], nil
 		case pam.PromptEchoOn:
-			message = message
-			log.WithFields(log.Fields{
-				"message": message,
-			}).Debugln("Outbound")
-			_, _ = readwriter.WriteString(message + " \n")
-			//fmt.Print(message + " ")
-			input, err := readwriter.ReadString('\n')
+			outBound += " \n"
+			_, _ = conn.Write([]byte(outBound))
+			log.WithFields(log.Fields{"outBound": outBound}).Debugln("Sent message.")
+			inBound, err := client.ReadString('\n')
 			if err != nil {
 				log.Infoln("Connection died.")
 				return "", err
 			}
-			log.WithFields(log.Fields{
-				"input": input,
-			}).Debugln("Inbound")
-			return input[:len(input)-1], nil
+			log.WithFields(log.Fields{"inBound": inBound}).Debugln("Received message.")
+			return inBound[:len(inBound)-1], nil
 		case pam.ErrorMsg:
-			message = message
-			log.WithFields(log.Fields{
-				"message": message,
-			}).Debugln("Outbound")
-			_, _ = readwriter.WriteString(message + " \n")
+			_, _ = conn.Write([]byte(outBound))
+			log.WithFields(log.Fields{"outBound": outBound}).Debugln("Sent message.")
 			return "", nil
 		case pam.TextInfo:
-			message = message
-			log.WithFields(log.Fields{
-				"message": message,
-			}).Debugln("Outbound")
-			_, _ = readwriter.WriteString(message + " \n")
+			_, _ = conn.Write([]byte(outBound))
+			log.WithFields(log.Fields{"outBound": outBound}).Debugln("Sent message.")
 			return "", nil
 		}
-		return "", errors.New("unrecognized message style")
+		return "", errors.New("unrecognized outBound style")
 	})
 	if err != nil {
 		return
@@ -82,12 +66,12 @@ func (server Server) Serve(conn net.Conn) {
 	log.WithFields(log.Fields{
 		"message": message,
 	}).Infoln("Outbound")
-	_, _ = readwriter.WriteString(message + "\n")
+	_, _ = conn.Write([]byte(message + "\n"))
 
 	// run loop forever (or until ctrl-c)
 	for {
 		// will listen for message to process ending in newline (\n)
-		message, err := readwriter.ReadString('\n')
+		message, err := client.ReadString('\n')
 		if err != nil {
 			log.Infoln("Connection died.")
 			break
@@ -102,6 +86,6 @@ func (server Server) Serve(conn net.Conn) {
 		log.WithFields(log.Fields{
 			"answer": answer,
 		}).Infoln("Outbound")
-		_, _ = readwriter.WriteString(answer + "\n")
+		_, _ = conn.Write([]byte(answer + "\n"))
 	}
 }

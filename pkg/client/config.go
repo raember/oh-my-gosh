@@ -7,19 +7,16 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 )
 
-var config = viper.New()
-
 func setDefaults(config *viper.Viper) {
 	config.SetDefault("Client.Port", common.PORT)
 	config.SetDefault("Client.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
 }
 
-func init() {
+func Config(configpath string) *viper.Viper {
+	config := viper.New()
 	config.SetConfigName(common.CLIENTNAME + "_config")
-	config.AddConfigPath("/etc/" + common.CLIENTNAME + "/")
-	config.AddConfigPath("./configs")
-	config.AddConfigPath("../../configs")
+	config.AddConfigPath(configpath)
 	config.SetConfigType(common.CONFIGFORMAT)
 	setDefaults(config)
 	err := config.ReadInConfig()
@@ -34,8 +31,5 @@ func init() {
 			"name": e.Name,
 		}).Warnln("Config file changed.")
 	})
-}
-
-func Config() *viper.Viper {
 	return config
 }

@@ -46,18 +46,15 @@ func NewLookout(protocol string, port int) (*Lookout, error) {
 	return &Lookout{address: reqUrl}, nil
 }
 
-func (lookout Lookout) Listen() (net.Listener, error) {
-	cert, err := lookout.loadCertKeyPair(
-		config.GetString("Authentication.Certificate"),
-		config.GetString("Authentication.KeyFile"),
-	)
+func (lookout Lookout) Listen(certpath string, keypath string) (net.Listener, error) {
+	cert, err := lookout.loadCertKeyPair(certpath, keypath)
 	if err != nil {
 		return nil, err
 	}
 
 	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 	protocol := lookout.address.Scheme
-	address := lookout.address.Host
+	address := ":" + lookout.address.Port()
 	listener, err := tls.Listen(protocol, address, tlsConfig)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -68,7 +65,8 @@ func (lookout Lookout) Listen() (net.Listener, error) {
 		return nil, err
 	}
 	log.WithFields(log.Fields{
-		"address": listener.Addr(),
+		"protocol": protocol,
+		"address":  address,
 	}).Infoln("Listening for incoming requests.")
 	return listener, nil
 }
@@ -83,7 +81,10 @@ func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls
 		}).Fatalln("Couldn't load certificate key pair.")
 		return tls.Certificate{}, err
 	}
-	log.Debugln("Loaded certificate key pair.")
+	log.WithFields(log.Fields{
+		"certPath":    certPath,
+		"keyFilePath": keyFilePath,
+	}).Infoln("Loaded certificate key pair.")
 	return cert, nil
 }
 
@@ -98,7 +99,7 @@ func WaitForConnections(listener net.Listener, handler func(net.Conn)) error {
 			return err
 		}
 		log.WithFields(log.Fields{
-			"remoteaddress": conn.RemoteAddr(),
+			"remote": common.AddrToStr(conn.RemoteAddr()),
 		}).Infoln("Connection established.")
 
 		go handler(conn)
