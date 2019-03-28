@@ -13,7 +13,7 @@ const (
 )
 
 func Authenticate(user string, password string) (*pam.Transaction, error) {
-	transaction, err := pam.StartFunc("", "", func(style pam.Style, message string) (string, error) {
+	transaction, err := pam.StartFunc("goshd", user, func(style pam.Style, message string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
 			return password, nil

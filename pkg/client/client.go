@@ -26,6 +26,41 @@ func (client Client) Communicate(conn net.Conn) error {
 		return err
 	}
 
+	//go func(host io.Writer){
+	//	for {
+	//		var read []byte
+	//		n, err := os.Stdin.Read(read)
+	//		if err != nil {
+	//			log.Errorln("Sender1: " + err.Error())
+	//			break
+	//		}
+	//		if n == 0 {
+	//			continue
+	//		}
+	//		n, err = host.Write(read)
+	//		if err != nil {
+	//			log.Errorln("Sender2: " + err.Error())
+	//			break
+	//		}
+	//	}
+	//}(conn)
+	//for {
+	//	var read []byte
+	//	n, err := host.Read(read)
+	//	if err != nil {
+	//		log.Errorln("Receiver1: " + err.Error())
+	//		break
+	//	}
+	//	if n == 0 {
+	//		continue
+	//	}
+	//	n, err = os.Stdout.Write(read)
+	//	if err != nil {
+	//		log.Errorln("Receiver2: " + err.Error())
+	//		break
+	//	}
+	//}
+
 	for {
 		// listen for server
 		inBound, err := host.ReadString('\n')

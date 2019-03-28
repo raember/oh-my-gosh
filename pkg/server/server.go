@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
 	"net"
 	"strconv"
 	"strings"
@@ -32,7 +33,6 @@ func (server Server) Serve(conn net.Conn) {
 	if err != nil {
 		return
 	}
-	defer transaction.CloseSession(pam.Silent)
 
 	message := "Authentication was successful"
 	log.WithFields(log.Fields{
@@ -40,10 +40,19 @@ func (server Server) Serve(conn net.Conn) {
 	}).Infoln("Outbound")
 	_, _ = conn.Write([]byte(message + "\n"))
 
+	err = transaction.SetCred(pam.Silent)
+	if err != nil {
+		log.Errorln("Couldn't set credentials for the user.")
+	}
+	err = transaction.AcctMgmt(pam.Silent)
+	if err != nil {
+		log.Errorln("Couldn't validate the user.")
+	}
 	err = transaction.OpenSession(pam.Silent)
 	if err != nil {
-		log.Errorln("Couldn't open a session.")
+		log.WithField("error", err.Error()).Errorln("Couldn't open a session.")
 	}
+	defer transaction.CloseSession(pam.Silent)
 	str, err := transaction.GetItem(pam.Service)
 	if err == nil {
 		log.Infoln("Service: " + str)
@@ -83,6 +92,11 @@ func (server Server) Serve(conn net.Conn) {
 			log.Infoln(str + ": " + strs[str])
 		}
 	}
+	file, name, err := pty.Open()
+	log.WithField("slavename", name).Infoln("Pts")
+	log.WithField("filename", file.Name()).Infoln("File")
+
+	//shell.Start(client, conn, conn)
 
 	// run loop forever (or until ctrl-c)
 	for {
