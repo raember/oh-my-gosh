@@ -33,7 +33,7 @@ func main() {
 	}
 	defer listener.Close()
 	err = server.WaitForConnections(listener, func(conn net.Conn) {
-		srvr := server.Server{}
+		srvr := server.NewServer(config)
 		srvr.Serve(conn)
 	})
 	if err != nil {
