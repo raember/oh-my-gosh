@@ -6,10 +6,13 @@ import (
 	"github.com/msteinert/pam"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.com/willdonnelly/passwd"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
+	"io/ioutil"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -29,7 +32,7 @@ func (server Server) Serve(conn net.Conn) {
 	}).Debugln("Serving new connection.")
 	client := bufio.NewReader(conn)
 
-	transaction, err := server.performLogin(conn)
+	transaction, username, err := server.performLogin(conn)
 	if err != nil {
 		return
 	}
@@ -96,6 +99,34 @@ func (server Server) Serve(conn net.Conn) {
 	log.WithField("slavename", name).Infoln("Pts")
 	log.WithField("filename", file.Name()).Infoln("File")
 
+	users, err := passwd.Parse()
+	if err != nil {
+		log.WithField("error", err).Errorln("Couldn't lookup users.")
+		return
+	}
+	myUser := users[username]
+	USER := username
+	UID := myUser.Uid
+	GID := myUser.Gid
+	HOME := myUser.Home
+	SHELL := myUser.Shell
+	log.WithFields(log.Fields{
+		"USER":  USER,
+		"UID":   UID,
+		"GID":   GID,
+		"HOME":  HOME,
+		"SHELL": SHELL,
+	}).Println("Looked up user.")
+
+	if _, err := os.Stat("/etc/motd"); err == nil {
+		motd, err := ioutil.ReadFile("/etc/motd")
+		if err != nil {
+			log.WithField("error", err).Errorln("Couldn't read message of the day.")
+			return
+		}
+		log.Println(motd)
+	}
+
 	//shell.Start(client, conn, conn)
 
 	// run loop forever (or until ctrl-c)
@@ -125,7 +156,7 @@ func (server Server) Serve(conn net.Conn) {
 // user\n
 // password\n
 // Sends one byte as answer.
-func (server Server) performLogin(conn net.Conn) (*pam.Transaction, error) {
+func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, error) {
 	client := bufio.NewReader(conn)
 	tries := 1
 	for {
@@ -133,29 +164,29 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, error) {
 			err := errors.New("maximum tries reached")
 			log.WithField("error", err).Errorln("User reached maximum tries.")
 			_, _ = conn.Write([]byte{login.LOGIN_EXCEED})
-			return nil, err
+			return nil, "", err
 		}
 		tries++
-		user, err := client.ReadString('\n')
+		username, err := client.ReadString('\n')
 		if err != nil {
 			log.Errorln(err.Error())
 		}
-		user = strings.TrimRight(user, "\n")
+		username = strings.TrimRight(username, "\n")
 		password, err := client.ReadString('\n')
 		if err != nil {
 			log.Errorln(err.Error())
 		}
 		password = strings.TrimRight(password, "\n")
-		transaction, err := login.Authenticate(user, password)
+		transaction, err := login.Authenticate(username, password)
 		if err == nil {
-			log.WithField("user", user).Infoln("User successfully authenticated himself.")
+			log.WithField("username", username).Infoln("User successfully authenticated himself.")
 			_, err = conn.Write([]byte{login.LOGIN_ACCEPT})
 			if err != nil {
 				log.Errorln(err.Error())
 			}
-			return transaction, nil
+			return transaction, username, nil
 		}
-		log.WithField("user", user).Errorln("User failed to authenticate himself.")
+		log.WithField("username", username).Errorln("User failed to authenticate himself.")
 		_, _ = conn.Write([]byte{login.LOGIN_FAIL})
 	}
 }
