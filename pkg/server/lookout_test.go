@@ -42,7 +42,7 @@ func TestLookout_Listen(t *testing.T) {
 	_, path, _, _ := runtime.Caller(0)
 	fmt.Println(path)
 	lookout, _ := NewLookout(common.TCP, common.PORT)
-	listener, err := lookout.Listen()
+	listener, err := lookout.Listen("../../test/certificate.pem", "../../test/key.pem")
 	defer listener.Close()
 	if err != nil {
 		t.Error("Failed listening")

@@ -160,12 +160,6 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, erro
 	client := bufio.NewReader(conn)
 	tries := 1
 	for {
-		if tries > server.config.GetInt("Authentication.MaxTries") {
-			err := errors.New("maximum tries reached")
-			log.WithField("error", err).Errorln("User reached maximum tries.")
-			_, _ = conn.Write([]byte{login.LOGIN_EXCEED})
-			return nil, "", err
-		}
 		tries++
 		username, err := client.ReadString('\n')
 		if err != nil {
@@ -187,6 +181,13 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, erro
 			return transaction, username, nil
 		}
 		log.WithField("username", username).Errorln("User failed to authenticate himself.")
-		_, _ = conn.Write([]byte{login.LOGIN_FAIL})
+		if tries > server.config.GetInt("Authentication.MaxTries") {
+			err := errors.New("maximum tries reached")
+			log.WithField("error", err).Errorln("User reached maximum tries.")
+			_, _ = conn.Write([]byte{login.LOGIN_EXCEED})
+			return nil, "", err
+		} else {
+			_, _ = conn.Write([]byte{login.LOGIN_FAIL})
+		}
 	}
 }
