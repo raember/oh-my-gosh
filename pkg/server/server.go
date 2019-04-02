@@ -14,9 +14,9 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -130,6 +130,32 @@ func (server Server) Serve(conn net.Conn) {
 		log.Println(motd)
 	}
 
+	uidInt, _ := strconv.ParseUint(UID, 10, 32)
+	gidInt, _ := strconv.ParseUint(GID, 10, 32)
+	creds := syscall.Credential{
+		Uid:    uint32(uidInt),
+		Gid:    uint32(gidInt),
+		Groups: []uint32{},
+	}
+
+	sysattr := syscall.SysProcAttr{
+		Credential: &creds,
+	}
+
+	attr := syscall.ProcAttr{
+		Dir:   HOME,
+		Env:   []string{},
+		Files: []uintptr{},
+		Sys:   &sysattr,
+	}
+	pid, err := syscall.ForkExec("sup?", []string{}, &attr)
+	log.WithField("pid", pid).Println("Forked.")
+
+	err = server.checkForNologinFile()
+	if err != nil {
+		return
+	}
+
 	//shell.Start(client, conn, conn)
 
 	// run loop forever (or until ctrl-c)
@@ -185,14 +211,12 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, erro
 		tries++
 		username, err := client.ReadString('\n')
 		if err != nil {
-			log.WithField("error", reflect.TypeOf(err).String()).Errorln("Failed reading username.")
-			return &pam.Transaction{}, "", err
+			log.Errorln(err.Error())
 		}
 		username = strings.TrimRight(username, "\n")
 		password, err := client.ReadString('\n')
 		if err != nil {
-			log.WithField("error", err).Errorln("Failed reading password.")
-			return &pam.Transaction{}, username, err
+			log.Errorln(err.Error())
 		}
 		password = strings.TrimRight(password, "\n")
 		transaction, err := login.Authenticate(username, password)
@@ -200,7 +224,7 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, erro
 			log.WithField("username", username).Infoln("User successfully authenticated himself.")
 			_, err = conn.Write([]byte{login.LOGIN_ACCEPT})
 			if err != nil {
-				log.WithField("error", err).Errorln("Failed sending confirmation.")
+				log.Errorln(err.Error())
 			}
 			return transaction, username, nil
 		}
@@ -214,4 +238,16 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, erro
 			_, _ = conn.Write([]byte{login.LOGIN_FAIL})
 		}
 	}
+}
+
+func (server Server) checkForNologinFile() error {
+	file, err := os.Open("/etc/nologin")
+	if err != nil {
+		log.Debugln("/etc/nologin file not found. Login permitted.")
+		return nil
+	}
+	defer file.Close()
+	err = errors.New("/etc/nologin file exists: no login allowed")
+	log.WithField("error", err).Infoln("/etc/nologin file exists. Login not permitted.")
+	return err
 }
