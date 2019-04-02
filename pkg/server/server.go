@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"github.com/msteinert/pam"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -13,8 +14,10 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Server struct {
@@ -158,17 +161,38 @@ func (server Server) Serve(conn net.Conn) {
 // Sends one byte as answer.
 func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, error) {
 	client := bufio.NewReader(conn)
+	c1 := make(chan string, 1)
+	timeout := server.config.GetInt("Authentication.LoginGraceTime")
+	secs := time.Duration(timeout) * time.Second
+	go func() {
+		time.Sleep(secs)
+		c1 <- "result 1"
+	}()
+	select {
+	case res := <-c1:
+		fmt.Println(res)
+	case <-time.After(secs):
+		err := errors.New("login grace time exceeded")
+		log.WithFields(log.Fields{
+			"error":   err,
+			"timeout": timeout,
+		}).Errorln("Timed out.")
+		return &pam.Transaction{}, "", err
+	}
+
 	tries := 1
 	for {
 		tries++
 		username, err := client.ReadString('\n')
 		if err != nil {
-			log.Errorln(err.Error())
+			log.WithField("error", reflect.TypeOf(err).String()).Errorln("Failed reading username.")
+			return &pam.Transaction{}, "", err
 		}
 		username = strings.TrimRight(username, "\n")
 		password, err := client.ReadString('\n')
 		if err != nil {
-			log.Errorln(err.Error())
+			log.WithField("error", err).Errorln("Failed reading password.")
+			return &pam.Transaction{}, username, err
 		}
 		password = strings.TrimRight(password, "\n")
 		transaction, err := login.Authenticate(username, password)
@@ -176,7 +200,7 @@ func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, erro
 			log.WithField("username", username).Infoln("User successfully authenticated himself.")
 			_, err = conn.Write([]byte{login.LOGIN_ACCEPT})
 			if err != nil {
-				log.Errorln(err.Error())
+				log.WithField("error", err).Errorln("Failed sending confirmation.")
 			}
 			return transaction, username, nil
 		}
