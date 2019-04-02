@@ -1,0 +1,16 @@
+[Unit]
+Description=Oh-My-Gosh Daemon
+#Wants=*.service
+After=network.target
+#After=*.service
+
+[Service]
+ExecStart=/usr/bin/goshd
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+# This service file runs a Oh-My-Gosh deamon.

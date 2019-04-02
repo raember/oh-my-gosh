@@ -1,0 +1,19 @@
+# This is the goshd server system-wide configuration file.
+#
+# The strategy used for options in the default goshd_config shipped with
+# oh-my-gosh is to specify options with their default value where
+# possible, but leave them commented. Uncommented options override the
+# default value.
+
+[Server]
+Port = 2222
+Protocol = "tcp"
+
+[Logging]
+LogLevel = "info"
+
+[Authentication]
+LoginGraceTime = 120
+PermitRootLogin = false
+MaxTries = 6
+MaxSessions = 10

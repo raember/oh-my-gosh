@@ -17,7 +17,6 @@ package pty
 #include <stdlib.h>
 #include <unistd.h>
 */
-
 import "C"
 
 import (
