@@ -6,11 +6,14 @@ import (
 	"os/exec"
 )
 
-func Start(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) {
-	shell := exec.Command("/bin/bash")
+func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
+	shell := exec.Command(shellpath)
 	shell.Stdin = stdIn
 	shell.Stdout = stdOut
 	shell.Stderr = stdErr
-	log.Println("Running shell...")
-	_ = shell.Run()
+	err := shell.Run()
+	if err != nil {
+		log.WithField("error", err).Errorln("An error occured.")
+	}
+	return err
 }

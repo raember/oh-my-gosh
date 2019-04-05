@@ -7,9 +7,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/willdonnelly/passwd"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/speakeasier"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -18,22 +18,24 @@ import (
 	"syscall"
 )
 
+// The Server structure is used to handle a connection.
 type Server struct {
 	config *viper.Viper
+	conn   net.Conn
 }
 
 func NewServer(config *viper.Viper) Server {
-	return Server{config: config}
+	return Server{
+		config: config,
+		conn:   nil,
+	}
 }
 
-func (server Server) Serve(conn net.Conn) {
-	defer conn.Close()
-	log.WithFields(log.Fields{
-		"remote": common.AddrToStr(conn.RemoteAddr()),
-	}).Debugln("Serving new connection.")
-	client := bufio.NewReader(conn)
+// Serve a newly established connection.
+func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) {
+	client := bufio.NewReader(stdIn)
 
-	transaction, username, err := server.performLogin(conn)
+	transaction, username, err := server.PerformLogin(stdIn, stdOut, stdErr)
 	if err != nil {
 		return
 	}
@@ -42,7 +44,7 @@ func (server Server) Serve(conn net.Conn) {
 	log.WithFields(log.Fields{
 		"message": message,
 	}).Infoln("Outbound")
-	_, _ = conn.Write([]byte(message + "\n"))
+	_, _ = server.conn.Write([]byte(message + "\n"))
 
 	err = transaction.SetCred(pam.Silent)
 	if err != nil {
@@ -149,7 +151,7 @@ func (server Server) Serve(conn net.Conn) {
 	pid, err := syscall.ForkExec("sup?", []string{}, &attr)
 	log.WithField("pid", pid).Println("Forked.")
 
-	err = server.checkForNologinFile()
+	err = server.checkForNologinFile(stdIn, stdOut, stdErr)
 	if err != nil {
 		return
 	}
@@ -174,7 +176,7 @@ func (server Server) Serve(conn net.Conn) {
 		log.WithFields(log.Fields{
 			"answer": answer,
 		}).Infoln("Outbound")
-		_, _ = conn.Write([]byte(answer + "\n"))
+		_, _ = server.conn.Write([]byte(answer + "\n"))
 	}
 }
 
@@ -183,50 +185,65 @@ func (server Server) Serve(conn net.Conn) {
 // user\n
 // password\n
 // Sends one byte as answer.
-func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, error) {
-	client := bufio.NewReader(conn)
-	tries := 1
-	for {
-		tries++
-		username, err := client.ReadString('\n')
-		if err != nil {
-			log.Errorln(err.Error())
-		}
-		username = strings.TrimRight(username, "\n")
-		password, err := client.ReadString('\n')
-		if err != nil {
-			log.Errorln(err.Error())
-		}
-		password = strings.TrimRight(password, "\n")
-		transaction, err := login.Authenticate(username, password)
-		if err == nil {
-			log.WithField("username", username).Infoln("User successfully authenticated himself.")
-			_, err = conn.Write([]byte{login.LOGIN_ACCEPT})
+func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*pam.Transaction, string, error) {
+	transaction, err := pam.StartFunc("goshd", "", func(style pam.Style, message string) (string, error) {
+		switch style {
+		case pam.PromptEchoOff:
+			log.WithField("msg", message).Debugln("Will read password.")
+			//str, err := bufio.NewReader(stdIn).ReadString('\n')
+			str, err := speakeasy.FAsk(stdIn, stdOut, message)
 			if err != nil {
-				log.Errorln(err.Error())
+				log.WithField("error", err).Errorln("Couldn't read password.")
 			}
-			return transaction, username, nil
+			str = strings.TrimSpace(str)
+			log.WithField("str", str).Debugln("Read password.")
+			return str, nil
+		case pam.PromptEchoOn:
+			_, _ = stdOut.Write([]byte(message)) // "login:"
+			log.WithField("msg", message).Debugln("Will read user name.")
+			str, err := bufio.NewReader(stdIn).ReadString('\n')
+			if err != nil {
+				log.WithField("error", err).Errorln("Couldn't read user name.")
+			}
+			str = strings.TrimSpace(str)
+			log.WithField("str", str).Debugln("Read user name.")
+			return str, nil
+		case pam.ErrorMsg:
+			log.WithField("msg", message).Debugln("Will send error.")
+			_, _ = stdErr.Write([]byte(message))
+			return "", nil
+		case pam.TextInfo:
+			log.WithField("msg", message).Debugln("Will send text.")
+			_, _ = stdOut.Write([]byte(message))
+			return "", nil
 		}
-		log.WithField("username", username).Errorln("User failed to authenticate himself.")
-		if tries > server.config.GetInt("Authentication.MaxTries") {
-			err := errors.New("maximum tries reached")
-			log.WithField("error", err).Errorln("User reached maximum tries.")
-			_, _ = conn.Write([]byte{login.LOGIN_EXCEED})
-			return nil, "", err
-		} else {
-			_, _ = conn.Write([]byte{login.LOGIN_FAIL})
-		}
+		return "", errors.New("unrecognized message style")
+	})
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Errorln("Couldn't start authentication.")
+		return nil, "", err
 	}
+	err = transaction.Authenticate(0)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Errorln("Couldn't authenticate.")
+		return nil, "", err
+	}
+	log.Infoln("Authentication succeeded!")
+	return transaction, "", nil
 }
 
-func (server Server) checkForNologinFile() error {
-	file, err := os.Open("/etc/nologin")
+func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
+	bytes, err := ioutil.ReadFile("/etc/nologin")
 	if err != nil {
 		log.Debugln("/etc/nologin file not found. Login permitted.")
 		return nil
 	}
-	defer file.Close()
 	err = errors.New("/etc/nologin file exists: no login allowed")
 	log.WithField("error", err).Infoln("/etc/nologin file exists. Login not permitted.")
+	_, _ = stdOut.Write(bytes)
 	return err
 }
