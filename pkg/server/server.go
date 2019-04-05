@@ -7,6 +7,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/willdonnelly/passwd"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/speakeasier"
 	"io"
@@ -18,17 +20,12 @@ import (
 	"syscall"
 )
 
-// The Server structure is used to handle a connection.
 type Server struct {
 	config *viper.Viper
-	conn   net.Conn
 }
 
 func NewServer(config *viper.Viper) Server {
-	return Server{
-		config: config,
-		conn:   nil,
-	}
+	return Server{config: config}
 }
 
 // Serve a newly established connection.
@@ -44,7 +41,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 	log.WithFields(log.Fields{
 		"message": message,
 	}).Infoln("Outbound")
-	_, _ = server.conn.Write([]byte(message + "\n"))
+	_, _ = conn.Write([]byte(message + "\n"))
 
 	err = transaction.SetCred(pam.Silent)
 	if err != nil {
@@ -176,7 +173,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 		log.WithFields(log.Fields{
 			"answer": answer,
 		}).Infoln("Outbound")
-		_, _ = server.conn.Write([]byte(answer + "\n"))
+		_, _ = conn.Write([]byte(answer + "\n"))
 	}
 }
 
