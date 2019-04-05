@@ -7,13 +7,10 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/willdonnelly/passwd"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/speakeasier"
 	"io"
 	"io/ioutil"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -41,7 +38,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 	log.WithFields(log.Fields{
 		"message": message,
 	}).Infoln("Outbound")
-	_, _ = conn.Write([]byte(message + "\n"))
+	_, _ = stdOut.Write([]byte(message + "\n"))
 
 	err = transaction.SetCred(pam.Silent)
 	if err != nil {
@@ -173,7 +170,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 		log.WithFields(log.Fields{
 			"answer": answer,
 		}).Infoln("Outbound")
-		_, _ = conn.Write([]byte(answer + "\n"))
+		_, _ = stdOut.Write([]byte(answer + "\n"))
 	}
 }
 
