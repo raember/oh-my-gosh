@@ -1,13 +1,6 @@
 package main
 
-/*
-#include <unistd.h>
-int go_fork() {
-	return fork();
-}
-*/
 import "C"
-
 import (
 	"flag"
 	log "github.com/sirupsen/logrus"
@@ -45,26 +38,22 @@ func main() {
 			"remote": common.AddrToStr(conn.RemoteAddr()),
 		}).Debugln("Serving new connection.")
 		srvr := server.NewServer(config)
-		pid := C.go_fork()
-		if pid == 0 { // Child
-			log.WithField("pid", pid).Debugln("Forked.")
-			srvr.Serve(conn, conn, conn)
-		} else if pid > 0 { // Parent
-			log.WithField("pid", pid).Debugln("Forked off child.")
-		} else {
-			log.WithField("pid", pid).Errorln("Failed to fork process.")
-		}
+		// TODO: Fix usage corruption of conn struct after forking.
+		srvr.Serve(conn, conn, conn)
+		//pid, err := proc.Fork()
+		//if err != nil {
+		//	return
+		//}
+		//if pid == 0 { // Child
+		//	srvr.Serve(conn, conn, conn)
+		//} else { // Parent, child-pid recieved
+		//	return
+		//}
 	})
 	if err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)
-
-	//shell.Execute("/bin/bash", os.Stdin, os.Stdout, os.Stderr)
-	//
-	//srvr := server.NewServer(config)
-	//_, user, _ := srvr.PerformLogin(os.Stdin, os.Stdout, os.Stderr)
-	//log.Infoln(user)
 }
 
 func init() {

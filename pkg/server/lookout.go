@@ -89,7 +89,6 @@ func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls
 }
 
 func WaitForConnections(listener net.Listener, handler func(net.Conn)) error {
-
 	for {
 		conn, err := listener.Accept()
 		if err != nil {

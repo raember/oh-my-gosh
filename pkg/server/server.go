@@ -42,7 +42,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 	}
 	err = transaction.OpenSession(pam.Silent)
 	if err != nil {
-		log.WithField("error", err.Error()).Errorln("Couldn't open a session.")
+		log.WithField("error", err).Errorln("Couldn't open a session.")
 	}
 	defer transaction.CloseSession(pam.Silent)
 	str, err := transaction.GetItem(pam.Service)
@@ -148,6 +148,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 		return err
 	}
 
+	// TODO: Make shell transmit everything over to client CORRECTLY.
 	return shell.Execute(user.Shell, stdIn, stdOut, stdErr)
 }
 
@@ -157,15 +158,22 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer, stdErr io.W
 	for {
 		tries++
 		transaction, username, err := login.Authenticate(stdIn, stdOut, stdErr)
-		if err == nil {
+		if err != nil {
+			switch err.(type) {
+			case login.AuthError: // Auth error -> continue
+				log.WithField("username", username).Errorln("User failed to authenticate himself.")
+				if tries > server.config.GetInt("Authentication.MaxTries") {
+					err := errors.New("maximum tries reached")
+					log.WithField("error", err).Errorln("User reached maximum tries.")
+					return nil, "", err
+				}
+				continue
+			case error: // i.E. connection error -> abort
+				return transaction, username, err
+			}
+		} else {
 			log.WithField("username", username).Infoln("User successfully authenticated himself.")
 			return transaction, username, nil
-		}
-		log.WithField("username", username).Errorln("User failed to authenticate himself.")
-		if tries > server.config.GetInt("Authentication.MaxTries") {
-			err := errors.New("maximum tries reached")
-			log.WithField("error", err).Errorln("User reached maximum tries.")
-			return nil, "", err
 		}
 	}
 }

@@ -7,7 +7,7 @@ import (
 )
 
 func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
-	shell := exec.Command(shellpath, "--login")
+	shell := exec.Command(shellpath)
 	shell.Stdin = stdIn
 	shell.Stdout = stdOut
 	shell.Stderr = stdErr
