@@ -7,8 +7,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/willdonnelly/passwd"
+	_ "github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/speakeasier"
 	"io"
 	"io/ioutil"
 	"os"
@@ -175,59 +176,22 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 }
 
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-// Receives 2 lines from the client:
-// user\n
-// password\n
-// Sends one byte as answer.
 func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*pam.Transaction, string, error) {
-	transaction, err := pam.StartFunc("goshd", "", func(style pam.Style, message string) (string, error) {
-		switch style {
-		case pam.PromptEchoOff:
-			log.WithField("msg", message).Debugln("Will read password.")
-			//str, err := bufio.NewReader(stdIn).ReadString('\n')
-			str, err := speakeasy.FAsk(stdIn, stdOut, message)
-			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read password.")
-			}
-			str = strings.TrimSpace(str)
-			log.WithField("str", str).Debugln("Read password.")
-			return str, nil
-		case pam.PromptEchoOn:
-			_, _ = stdOut.Write([]byte(message)) // "login:"
-			log.WithField("msg", message).Debugln("Will read user name.")
-			str, err := bufio.NewReader(stdIn).ReadString('\n')
-			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read user name.")
-			}
-			str = strings.TrimSpace(str)
-			log.WithField("str", str).Debugln("Read user name.")
-			return str, nil
-		case pam.ErrorMsg:
-			log.WithField("msg", message).Debugln("Will send error.")
-			_, _ = stdErr.Write([]byte(message))
-			return "", nil
-		case pam.TextInfo:
-			log.WithField("msg", message).Debugln("Will send text.")
-			_, _ = stdOut.Write([]byte(message))
-			return "", nil
+	tries := 1
+	for {
+		tries++
+		transaction, username, err := login.Authenticate(stdIn, stdOut, stdErr)
+		if err == nil {
+			log.WithField("username", username).Infoln("User successfully authenticated himself.")
+			return transaction, username, nil
 		}
-		return "", errors.New("unrecognized message style")
-	})
-	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err.Error(),
-		}).Errorln("Couldn't start authentication.")
-		return nil, "", err
+		log.WithField("username", username).Errorln("User failed to authenticate himself.")
+		if tries > server.config.GetInt("Authentication.MaxTries") {
+			err := errors.New("maximum tries reached")
+			log.WithField("error", err).Errorln("User reached maximum tries.")
+			return nil, "", err
+		}
 	}
-	err = transaction.Authenticate(0)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err.Error(),
-		}).Errorln("Couldn't authenticate.")
-		return nil, "", err
-	}
-	log.Infoln("Authentication succeeded!")
-	return transaction, "", nil
 }
 
 func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
