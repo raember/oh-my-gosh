@@ -24,6 +24,5 @@ func TestServer_Serve(t *testing.T) {
 	stdout := bytes.NewBufferString("")
 	stderr := bytes.NewBufferString("")
 
-	srvr := NewServer(Config(""))
-	srvr.Serve(stdin, stdout, stderr)
+	_ = NewServer(Config("")).Serve(stdin, stdout, stderr)
 }

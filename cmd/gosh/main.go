@@ -5,6 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/client"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"net"
 	"os"
 )
 
@@ -31,8 +32,10 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+	log.WithField("remote", common.AddrToStr(conn.RemoteAddr())).Debugln("Communicating with host.")
 	clnt := client.Client{}
-	err = clnt.Communicate(conn)
+	f, _ := conn.(*net.TCPConn).File()
+	err = clnt.Communicate(f, f, f)
 	if err != nil {
 		os.Exit(1)
 	}
