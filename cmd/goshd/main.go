@@ -1,5 +1,6 @@
 package main
 
+import "C"
 import (
 	"flag"
 	log "github.com/sirupsen/logrus"
@@ -33,8 +34,21 @@ func main() {
 	}
 	defer listener.Close()
 	err = server.WaitForConnections(listener, func(conn net.Conn) {
+		log.WithFields(log.Fields{
+			"remote": common.AddrToStr(conn.RemoteAddr()),
+		}).Debugln("Serving new connection.")
 		srvr := server.NewServer(config)
-		srvr.Serve(conn)
+		// TODO: Fix usage corruption of conn struct after forking.
+		srvr.Serve(conn, conn, conn)
+		//pid, err := proc.Fork()
+		//if err != nil {
+		//	return
+		//}
+		//if pid == 0 { // Child
+		//	srvr.Serve(conn, conn, conn)
+		//} else { // Parent, child-pid recieved
+		//	return
+		//}
 	})
 	if err != nil {
 		os.Exit(1)

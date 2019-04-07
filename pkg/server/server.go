@@ -1,20 +1,20 @@
 package server
 
 import (
-	"bufio"
 	"errors"
 	"github.com/msteinert/pam"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/willdonnelly/passwd"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	_ "github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/shell"
+	"io"
 	"io/ioutil"
-	"net"
 	"os"
 	"strconv"
-	"strings"
+	"syscall"
 )
 
 type Server struct {
@@ -25,23 +25,12 @@ func NewServer(config *viper.Viper) Server {
 	return Server{config: config}
 }
 
-func (server Server) Serve(conn net.Conn) {
-	defer conn.Close()
-	log.WithFields(log.Fields{
-		"remote": common.AddrToStr(conn.RemoteAddr()),
-	}).Debugln("Serving new connection.")
-	client := bufio.NewReader(conn)
-
-	transaction, username, err := server.performLogin(conn)
+// Serve a newly established connection.
+func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
+	transaction, username, err := server.PerformLogin(stdIn, stdOut, stdErr)
 	if err != nil {
-		return
+		return err
 	}
-
-	message := "Authentication was successful"
-	log.WithFields(log.Fields{
-		"message": message,
-	}).Infoln("Outbound")
-	_, _ = conn.Write([]byte(message + "\n"))
 
 	err = transaction.SetCred(pam.Silent)
 	if err != nil {
@@ -53,43 +42,61 @@ func (server Server) Serve(conn net.Conn) {
 	}
 	err = transaction.OpenSession(pam.Silent)
 	if err != nil {
-		log.WithField("error", err.Error()).Errorln("Couldn't open a session.")
+		log.WithField("error", err).Errorln("Couldn't open a session.")
 	}
 	defer transaction.CloseSession(pam.Silent)
 	str, err := transaction.GetItem(pam.Service)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Service from transaction.")
+	} else {
 		log.Infoln("Service: " + str)
 	}
 	str, err = transaction.GetItem(pam.User)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting User from transaction.")
+	} else {
 		log.Infoln("User: " + str)
 	}
 	str, err = transaction.GetItem(pam.Tty)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Tty from transaction.")
+	} else {
 		log.Infoln("Tty: " + str)
 	}
 	str, err = transaction.GetItem(pam.Rhost)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Rhost from transaction.")
+	} else {
 		log.Infoln("Rhost: " + str)
 	}
 	str, err = transaction.GetItem(pam.Authtok)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Authtok from transaction.")
+	} else {
 		log.Infoln("Authtok: " + str)
 	}
 	str, err = transaction.GetItem(pam.Oldauthtok)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Oldauthtok from transaction.")
+	} else {
 		log.Infoln("Oldauthtok: " + str)
 	}
 	str, err = transaction.GetItem(pam.Ruser)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Ruser from transaction.")
+	} else {
 		log.Infoln("Ruser: " + str)
 	}
 	str, err = transaction.GetItem(pam.UserPrompt)
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting UserPrompt from transaction.")
+	} else {
 		log.Infoln("UserPrompt: " + str)
 	}
 	strs, err := transaction.GetEnvList()
-	if err == nil {
+	if err != nil {
+		log.WithField("error", err).Errorln("Failed getting Env from transaction.")
+	} else {
 		log.Println("#envs: " + strconv.Itoa(len(strs)))
 		for _, str := range strs {
 			log.Infoln(str + ": " + strs[str])
@@ -99,95 +106,86 @@ func (server Server) Serve(conn net.Conn) {
 	log.WithField("slavename", name).Infoln("Pts")
 	log.WithField("filename", file.Name()).Infoln("File")
 
-	users, err := passwd.Parse()
-	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't lookup users.")
-		return
-	}
-	myUser := users[username]
-	USER := username
-	UID := myUser.Uid
-	GID := myUser.Gid
-	HOME := myUser.Home
-	SHELL := myUser.Shell
+	user, err := pw.GetPwByName(username)
 	log.WithFields(log.Fields{
-		"USER":  USER,
-		"UID":   UID,
-		"GID":   GID,
-		"HOME":  HOME,
-		"SHELL": SHELL,
+		"USER":  user.Name,
+		"UID":   user.Uid,
+		"GID":   user.Gid,
+		"HOME":  user.HomeDir,
+		"SHELL": user.Shell,
 	}).Println("Looked up user.")
 
 	if _, err := os.Stat("/etc/motd"); err == nil {
 		motd, err := ioutil.ReadFile("/etc/motd")
 		if err != nil {
 			log.WithField("error", err).Errorln("Couldn't read message of the day.")
-			return
+			return err
 		}
 		log.Println(motd)
 	}
 
-	//shell.Start(client, conn, conn)
-
-	// run loop forever (or until ctrl-c)
-	for {
-		// will listen for message to process ending in newline (\n)
-		message, err := client.ReadString('\n')
-		if err != nil {
-			log.Infoln("Connection died.")
-			break
-		}
-		// output message received
-		log.WithFields(log.Fields{
-			"message": message,
-		}).Infoln("Inbound")
-		// sample process for string received
-		answer := strings.ToUpper(message)
-		// send new string back to client
-		log.WithFields(log.Fields{
-			"answer": answer,
-		}).Infoln("Outbound")
-		_, _ = conn.Write([]byte(answer + "\n"))
+	creds := syscall.Credential{
+		Uid:    user.Uid,
+		Gid:    user.Gid,
+		Groups: []uint32{},
 	}
+
+	sysattr := syscall.SysProcAttr{
+		Credential: &creds,
+	}
+
+	attr := syscall.ProcAttr{
+		Dir:   user.HomeDir,
+		Env:   []string{},
+		Files: []uintptr{},
+		Sys:   &sysattr,
+	}
+	pid, err := syscall.ForkExec("sup?", []string{}, &attr)
+	log.WithField("pid", pid).Println("Forked.")
+
+	err = server.checkForNologinFile(stdIn, stdOut, stdErr)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Make shell transmit everything over to client CORRECTLY.
+	return shell.Execute(user.Shell, stdIn, stdOut, stdErr)
 }
 
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-// Receives 2 lines from the client:
-// user\n
-// password\n
-// Sends one byte as answer.
-func (server Server) performLogin(conn net.Conn) (*pam.Transaction, string, error) {
-	client := bufio.NewReader(conn)
+func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*pam.Transaction, string, error) {
 	tries := 1
 	for {
 		tries++
-		username, err := client.ReadString('\n')
+		transaction, username, err := login.Authenticate(stdIn, stdOut, stdErr)
 		if err != nil {
-			log.Errorln(err.Error())
-		}
-		username = strings.TrimRight(username, "\n")
-		password, err := client.ReadString('\n')
-		if err != nil {
-			log.Errorln(err.Error())
-		}
-		password = strings.TrimRight(password, "\n")
-		transaction, err := login.Authenticate(username, password)
-		if err == nil {
-			log.WithField("username", username).Infoln("User successfully authenticated himself.")
-			_, err = conn.Write([]byte{login.LOGIN_ACCEPT})
-			if err != nil {
-				log.Errorln(err.Error())
+			switch err.(type) {
+			case login.AuthError: // Auth error -> continue
+				log.WithField("username", username).Errorln("User failed to authenticate himself.")
+				if tries > server.config.GetInt("Authentication.MaxTries") {
+					err := errors.New("maximum tries reached")
+					log.WithField("error", err).Errorln("User reached maximum tries.")
+					return nil, "", err
+				}
+				continue
+			case error: // i.E. connection error -> abort
+				return transaction, username, err
 			}
+		} else {
+			log.WithField("username", username).Infoln("User successfully authenticated himself.")
 			return transaction, username, nil
 		}
-		log.WithField("username", username).Errorln("User failed to authenticate himself.")
-		if tries > server.config.GetInt("Authentication.MaxTries") {
-			err := errors.New("maximum tries reached")
-			log.WithField("error", err).Errorln("User reached maximum tries.")
-			_, _ = conn.Write([]byte{login.LOGIN_EXCEED})
-			return nil, "", err
-		} else {
-			_, _ = conn.Write([]byte{login.LOGIN_FAIL})
-		}
 	}
+}
+
+func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
+	bytes, err := ioutil.ReadFile("/etc/nologin")
+	if err != nil {
+		log.Debugln("/etc/nologin file not found. Login permitted.")
+		return nil
+	}
+	err = errors.New("/etc/nologin file exists: no login allowed")
+	log.WithField("error", err).Infoln("/etc/nologin file exists. Login not permitted.")
+	_, _ = stdOut.Write(bytes)
+	return err
 }

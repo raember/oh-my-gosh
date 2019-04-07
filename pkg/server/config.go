@@ -30,7 +30,8 @@ func Config(configpath string) *viper.Viper {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Fatalln("Couldn't read server_config file.")
+		}).Warnln("Couldn't read config file. Using defaults instead.")
+		return config
 	}
 	config.WatchConfig()
 	config.OnConfigChange(func(e fsnotify.Event) {

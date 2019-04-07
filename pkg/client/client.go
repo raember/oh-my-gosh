@@ -1,130 +1,72 @@
 package client
 
 import (
-	"bufio"
+	"crypto/tls"
 	"errors"
-	"github.com/bgentry/speakeasy"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"net"
-	"os"
+	"net/url"
+	"strconv"
 )
 
 type Client struct {
-	conn net.Conn
+	address *url.URL
 }
 
-func (client Client) Communicate(conn net.Conn) error {
-	defer conn.Close()
-	log.WithField("remote", common.AddrToStr(conn.RemoteAddr())).Debugln("Communicating with host.")
-	host := bufio.NewReader(conn)
-	input := bufio.NewReader(os.Stdin)
-
-	err := client.performLogin(conn)
+func NewClient(protocol string, address string, port int) (*Client, error) {
+	if port < 0 {
+		err := errors.New("port cannot be negative")
+		log.WithFields(log.Fields{
+			"port": port,
+		}).Errorln(err.Error())
+		return nil, err
+	}
+	if address == "" {
+		err := errors.New("address cannot be empty")
+		log.WithFields(log.Fields{
+			"port": port,
+		}).Errorln(err.Error())
+		return nil, err
+	}
+	addrStr := protocol + "://" + address + ":" + strconv.Itoa(port)
+	reqUrl, err := url.ParseRequestURI(addrStr)
 	if err != nil {
-		return err
+		log.WithFields(log.Fields{
+			"addrStr": addrStr,
+		}).Errorln(err.Error())
+		return nil, err
 	}
-
-	//go func(host io.Writer){
-	//	for {
-	//		var read []byte
-	//		n, err := os.Stdin.Read(read)
-	//		if err != nil {
-	//			log.Errorln("Sender1: " + err.Error())
-	//			break
-	//		}
-	//		if n == 0 {
-	//			continue
-	//		}
-	//		n, err = host.Write(read)
-	//		if err != nil {
-	//			log.Errorln("Sender2: " + err.Error())
-	//			break
-	//		}
-	//	}
-	//}(conn)
-	//for {
-	//	var read []byte
-	//	n, err := host.Read(read)
-	//	if err != nil {
-	//		log.Errorln("Receiver1: " + err.Error())
-	//		break
-	//	}
-	//	if n == 0 {
-	//		continue
-	//	}
-	//	n, err = os.Stdout.Write(read)
-	//	if err != nil {
-	//		log.Errorln("Receiver2: " + err.Error())
-	//		break
-	//	}
-	//}
-
-	for {
-		// listen for server
-		inBound, err := host.ReadString('\n')
-		if err != nil {
-			log.WithField("error", err.Error()).Debugln("Couldn't read from connection.")
-		}
-		log.WithField("inBound", inBound).Debugln("Received message.")
-		log.Println(inBound)
-
-		// read in input from stdin
-		log.Print("> ")
-		outBound, err := input.ReadString('\n')
-
-		// send to socket
-		_, err = conn.Write([]byte(outBound))
-		log.WithFields(log.Fields{"outBound": outBound}).Debugln("Sent message.")
-		if err != nil {
-			log.WithField("error", err.Error()).Debugln("Couldn't send message.")
-			break
-		}
+	if reqUrl.Scheme != common.TCP &&
+		reqUrl.Scheme != common.TCP4 &&
+		reqUrl.Scheme != common.TCP6 &&
+		reqUrl.Scheme != common.UNIX &&
+		reqUrl.Scheme != common.UNIXPACKET {
+		err := errors.New("protocol has to be either tcp, tcp4, tcp6, unix or unixpacket")
+		log.WithFields(log.Fields{
+			"protocol": reqUrl.Scheme,
+		}).Errorln(err.Error())
+		return nil, err
 	}
-	return nil
+	return &Client{address: reqUrl}, nil
 }
 
-// Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-// Sends 2 lines:
-// user\n
-// password\n
-// Reads one byte to determine the outcome.
-func (client Client) performLogin(conn net.Conn) error {
-	host := bufio.NewReader(conn)
-	input := bufio.NewReader(os.Stdin)
-
-	for {
-		print("Login: ")
-		user, err := input.ReadString('\n')
-		if err != nil {
-			log.Error("Failed reading user from stdin.")
-			return err
-		}
-		password, err := speakeasy.Ask("Password: ")
-		if err != nil {
-			log.Error("Failed reading password from stdin.")
-			return err
-		}
-		log.WithField("user", user).Debugln("Sending credentials to host.")
-		_, _ = conn.Write([]byte(user))
-		_, _ = conn.Write([]byte(password + "\n"))
-		answer, err := host.ReadByte()
-		if err != nil {
-			log.Error("Couldn't get answer from host.")
-			return err
-		}
-		switch answer {
-		case login.LOGIN_ACCEPT:
-			return nil
-		case login.LOGIN_FAIL:
-			err = errors.New("login attempt failed")
-			log.WithFields(log.Fields{"error": err}).Errorln("Couldn't authenticate user.")
-			continue
-		case login.LOGIN_EXCEED:
-			err = errors.New("exceeded allowed amount of user attempts")
-			log.WithFields(log.Fields{"error": err}).Errorln("Couldn't authenticate user.")
-			return err
-		}
+func (client Client) Dial() (net.Conn, error) {
+	address := client.address
+	tlsConfig := &tls.Config{InsecureSkipVerify: true}
+	log.WithFields(log.Fields{
+		"scheme": address.Scheme,
+		"host":   address.Host,
+	}).Infoln("Dialing server.")
+	conn, err := tls.Dial(address.Scheme, address.Host, tlsConfig)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"protocol": address.Scheme,
+			"host":     address.Host,
+			"error":    err.Error(),
+		}).Errorln("Couldn't connect to host.")
+		return nil, err
 	}
+	log.WithField("remote", common.AddrToStr(conn.RemoteAddr())).Infoln("Connection established.")
+	return conn, nil
 }

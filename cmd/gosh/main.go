@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/client"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"os"
+	"strconv"
+	"time"
 )
 
 var configPath = flag.String("conf", common.CONFIGPATH, "Config path")
@@ -19,7 +22,7 @@ func main() {
 	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("Config path set.")
 	log.WithFields(log.Fields{"address": address}).Debugln("Host address set.")
 	config := client.Config(*configPath)
-	dialer, err := client.NewDialer(
+	clnt, err := client.NewClient(
 		config.GetString("Client.Protocol"),
 		address,
 		config.GetInt("Client.Port"),
@@ -27,16 +30,39 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	conn, err := dialer.Dial()
+	conn, err := clnt.Dial()
 	if err != nil {
 		os.Exit(1)
 	}
-	clnt := client.Client{}
-	err = clnt.Communicate(conn)
-	if err != nil {
-		os.Exit(1)
+	go func() {
+		bufIn := bufio.NewReader(conn)
+		for {
+			n, err := bufIn.WriteTo(os.Stdout)
+			if err != nil {
+				log.WithField("error", err).Errorln("Couldn't read from connection.")
+				break
+			}
+			if n > 0 {
+				log.Debugln("Read " + strconv.Itoa(int(n)) + " bytes from server.")
+			}
+		}
+	}()
+	go func() {
+		bufIn := bufio.NewReader(os.Stdin)
+		for {
+			n, err := bufIn.WriteTo(conn)
+			if err != nil {
+				log.WithField("error", err).Errorln("Couldn't read from stdin.")
+				break
+			}
+			if n > 0 {
+				log.Debugln("Written " + strconv.Itoa(int(n)) + " bytes to server.")
+			}
+		}
+	}()
+	for {
+		time.Sleep(time.Second)
 	}
-	os.Exit(0)
 }
 
 func init() {
