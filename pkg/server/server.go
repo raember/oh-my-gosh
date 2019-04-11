@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 type Server struct {
@@ -27,7 +28,28 @@ func NewServer(config *viper.Viper) Server {
 
 // Serve a newly established connection.
 func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
-	transaction, username, err := server.PerformLogin(stdIn, stdOut, stdErr)
+	timeout := make(chan bool, 1)
+	loginChan := make(chan LoginResult)
+	go func() {
+		time.Sleep(time.Second * time.Duration(server.config.GetInt("Authentication.LoginGraceTime")))
+		timeout <- true
+	}()
+	server.PerformLogin(loginChan, stdIn, stdOut, stdErr)
+	var username string
+	var transaction *pam.Transaction
+	var err error
+	select {
+	case loginResult := <-loginChan:
+		// a read from ch has occurred
+		username = loginResult.username
+		transaction = loginResult.transaction
+		err = loginResult.error
+	case <-timeout:
+		err = errors.New("login timed out")
+		log.WithField("error", err).Errorln("Login grace time exceeded.")
+		_, _ = stdErr.Write([]byte(err.Error() + ""))
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -152,30 +174,41 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) 
 	return shell.Execute(user.Shell, stdIn, stdOut, stdErr)
 }
 
+type LoginResult struct {
+	transaction *pam.Transaction
+	username    string
+	error       error
+}
+
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*pam.Transaction, string, error) {
-	tries := 1
-	for {
-		tries++
-		transaction, username, err := login.Authenticate(stdIn, stdOut, stdErr)
-		if err != nil {
-			switch err.(type) {
-			case login.AuthError: // Auth error -> continue
-				log.WithField("username", username).Errorln("User failed to authenticate himself.")
-				if tries > server.config.GetInt("Authentication.MaxTries") {
-					err := errors.New("maximum tries reached")
-					log.WithField("error", err).Errorln("User reached maximum tries.")
-					return nil, "", err
+func (server Server) PerformLogin(loginChan chan LoginResult, stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) {
+	go func() {
+		tries := 1
+		for {
+			tries++
+			transaction, username, err := login.Authenticate(stdIn, stdOut, stdErr)
+			if err != nil {
+				switch err.(type) {
+				case login.AuthError: // Auth error -> continue
+					log.WithField("username", username).Errorln("User failed to authenticate himself.")
+					if tries > server.config.GetInt("Authentication.MaxTries") {
+						err := errors.New("maximum tries reached")
+						log.WithField("error", err).Errorln("User reached maximum tries.")
+						loginChan <- LoginResult{nil, "", err}
+						return
+					}
+					continue
+				case error: // i.E. connection error -> abort
+					loginChan <- LoginResult{transaction, username, err}
+					return
 				}
-				continue
-			case error: // i.E. connection error -> abort
-				return transaction, username, err
+			} else {
+				log.WithField("username", username).Infoln("User successfully authenticated himself.")
+				loginChan <- LoginResult{transaction, username, nil}
+				return
 			}
-		} else {
-			log.WithField("username", username).Infoln("User successfully authenticated himself.")
-			return transaction, username, nil
 		}
-	}
+	}()
 }
 
 func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) error {
