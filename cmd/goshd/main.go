@@ -5,6 +5,7 @@ import (
 	"flag"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/proc"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
 	"net"
 	"os"
@@ -37,21 +38,20 @@ func main() {
 		log.WithFields(log.Fields{
 			"remote": common.AddrToStr(conn.RemoteAddr()),
 		}).Debugln("Serving new connection.")
-		srvr := server.NewServer(config)
 		// TODO: Fix usage corruption of conn struct after forking.
-		err = srvr.Serve(conn, conn, conn)
+		pid, err := proc.Fork()
 		if err != nil {
-			_ = conn.Close()
+			return
 		}
-		//pid, err := proc.Fork()
-		//if err != nil {
-		//	return
-		//}
-		//if pid == 0 { // Child
-		//	srvr.Serve(conn, conn, conn)
-		//} else { // Parent, child-pid recieved
-		//	return
-		//}
+		if pid == 0 { // Child
+			srvr := server.NewServer(config)
+			err = srvr.Serve(conn, conn, conn)
+			if err != nil {
+				_ = conn.Close()
+			}
+		} else { // Parent, child-pid recieved
+			return
+		}
 	})
 	if err != nil {
 		os.Exit(1)
