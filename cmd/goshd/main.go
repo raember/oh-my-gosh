@@ -39,6 +39,8 @@ func main() {
 			"remote": common.AddrToStr(conn.RemoteAddr()),
 		}).Debugln("Serving new connection.")
 		// TODO: Fix usage corruption of conn struct after forking.
+
+		proc.SetIOContext(2, &conn)
 		pid, err := proc.Fork()
 		if err != nil {
 			return
