@@ -39,7 +39,10 @@ func main() {
 		}).Debugln("Serving new connection.")
 		srvr := server.NewServer(config)
 		// TODO: Fix usage corruption of conn struct after forking.
-		srvr.Serve(conn, conn, conn)
+		err = srvr.Serve(conn, conn, conn)
+		if err != nil {
+			_ = conn.Close()
+		}
 		//pid, err := proc.Fork()
 		//if err != nil {
 		//	return
