@@ -5,7 +5,6 @@ import (
 	"flag"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/proc"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
 	"net"
 	"os"
@@ -29,31 +28,49 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	listener, err := lookout.Listen(*certFile, *keyFile)
+	socketFd, err := lookout.Listen(*certFile, *keyFile)
 	if err != nil {
 		os.Exit(1)
 	}
-	defer listener.Close()
-	err = server.WaitForConnections(listener, func(conn net.Conn) {
-		log.WithFields(log.Fields{
-			"remote": common.AddrToStr(conn.RemoteAddr()),
-		}).Debugln("Serving new connection.")
+	err = server.WaitForConnections(socketFd, func(connFd uintptr) {
+		//log.WithFields(log.Fields{
+		//	"remote": common.AddrToStr(conn.RemoteAddr()),
+		//}).Debugln("Serving new connection.")
 		// TODO: Fix usage corruption of conn struct after forking.
-
-		proc.SetIOContext(2, &conn)
-		pid, err := proc.Fork()
+		conn, err := net.FileConn(os.NewFile(connFd, ""))
 		if err != nil {
+			log.WithFields(log.Fields{
+				"error":  err,
+				"connFd": connFd,
+			}).Errorln("Couldn't make a conn object from file descriptor.")
 			return
 		}
-		if pid == 0 { // Child
-			srvr := server.NewServer(config)
-			err = srvr.Serve(conn, conn, conn)
-			if err != nil {
-				_ = conn.Close()
-			}
-		} else { // Parent, child-pid recieved
-			return
+		srvr := server.NewServer(config)
+		err = srvr.Serve(conn, conn, conn)
+		if err != nil {
+			_ = conn.Close()
 		}
+		//pid, err := proc.Fork()
+		//if err != nil {
+		//	return
+		//}
+		//if pid == 0 { // Child
+		//	conn, err := net.FileConn(os.NewFile(connFd, ""))
+		//	if err != nil {
+		//		log.WithFields(log.Fields{
+		//			"error": err,
+		//			"connFd": connFd,
+		//		}).Errorln("Couldn't make a conn object from file descriptor.")
+		//		return
+		//	}
+		//	srvr := server.NewServer(config)
+		//	err = srvr.Serve(conn, conn, conn)
+		//	if err != nil {
+		//		_ = conn.Close()
+		//	}
+		//} else { // Parent, child-pid recieved
+		//	return
+		//}
 	})
 	if err != nil {
 		os.Exit(1)

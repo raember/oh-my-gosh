@@ -5,7 +5,7 @@ import (
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"net"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/socket"
 	"net/url"
 	"strconv"
 )
@@ -46,29 +46,26 @@ func NewLookout(protocol string, port int) (*Lookout, error) {
 	return &Lookout{address: reqUrl}, nil
 }
 
-func (lookout Lookout) Listen(certpath string, keypath string) (net.Listener, error) {
-	cert, err := lookout.loadCertKeyPair(certpath, keypath)
-	if err != nil {
-		return nil, err
-	}
-
-	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
+func (lookout Lookout) Listen(certpath string, keypath string) (uintptr, error) {
 	protocol := lookout.address.Scheme
-	address := ":" + lookout.address.Port()
-	listener, err := tls.Listen(protocol, address, tlsConfig)
+	portStr := lookout.address.Port()
+	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		log.WithFields(log.Fields{
-			"protocol": protocol,
-			"address":  address,
-			"error":    err.Error(),
-		}).Fatalln("Couldn't setup listener.")
-		return nil, err
+			"port":  lookout.address.Port(),
+			"error": err.Error(),
+		}).Fatalln("Couldn't convert port to int.")
+		return 0, err
+	}
+	socketFd, err := socket.Listen(port)
+	if err != nil {
+		return 0, err
 	}
 	log.WithFields(log.Fields{
 		"protocol": protocol,
-		"address":  address,
+		"port":     portStr,
 	}).Infoln("Listening for incoming requests.")
-	return listener, nil
+	return socketFd, nil
 }
 
 func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls.Certificate, error) {
@@ -88,19 +85,19 @@ func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls
 	return cert, nil
 }
 
-func WaitForConnections(listener net.Listener, handler func(net.Conn)) error {
+func WaitForConnections(socketFd uintptr, handler func(uintptr)) error {
 	for {
-		conn, err := listener.Accept()
+		connFd, err := socket.Accept(socketFd)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err.Error(),
 			}).Errorln("Failed opening connection.")
 			return err
 		}
-		log.WithFields(log.Fields{
-			"remote": common.AddrToStr(conn.RemoteAddr()),
-		}).Infoln("Connection established.")
+		//log.WithFields(log.Fields{
+		//	"remote": common.AddrToStr(connFd.RemoteAddr()),
+		//}).Infoln("Connection established.")
 
-		go handler(conn)
+		go handler(connFd)
 	}
 }
