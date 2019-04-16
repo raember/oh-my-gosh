@@ -1,12 +1,16 @@
 package client
 
 import (
+	"bufio"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
+	"io"
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 type Client struct {
@@ -15,16 +19,16 @@ type Client struct {
 
 func NewClient(protocol string, address string, port int) (*Client, error) {
 	if port < 0 {
-		err := errors.New("port cannot be negative")
+		err := errors.New("connection cannot be negative")
 		log.WithFields(log.Fields{
-			"port": port,
+			"connection": port,
 		}).Errorln(err.Error())
 		return nil, err
 	}
 	if address == "" {
 		err := errors.New("address cannot be empty")
 		log.WithFields(log.Fields{
-			"port": port,
+			"connection": port,
 		}).Errorln(err.Error())
 		return nil, err
 	}
@@ -69,4 +73,28 @@ func (client Client) Dial() (net.Conn, error) {
 	}
 	log.WithField("remote", common.AddrToStr(conn.RemoteAddr())).Infoln("Connection established.")
 	return conn, nil
+}
+
+func PerformLogin(in io.Reader, out io.Writer) error {
+	bIn := bufio.NewReader(in)
+	for {
+		str, err := bIn.ReadString('\n')
+		if err != nil {
+			log.WithField("error", err).Errorln("Couldn't read from server.")
+			return err
+		}
+		pkg, err := connection.Parse(strings.TrimSpace(str))
+		if err != nil {
+			log.WithField("error", err).Errorln("Couldn't parse request.")
+			return err
+		}
+		if pkg.Done() {
+			return nil
+		}
+		err = pkg.Ask(in, out)
+		if err != nil {
+			log.WithField("error", err).Errorln("Couldn't perform request.")
+			return err
+		}
+	}
 }

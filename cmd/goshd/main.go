@@ -5,8 +5,8 @@ import (
 	"flag"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
-	"net"
 	"os"
 )
 
@@ -37,12 +37,8 @@ func main() {
 		//	"remote": common.AddrToStr(conn.RemoteAddr()),
 		//}).Debugln("Serving new connection.")
 		// TODO: Fix usage corruption of conn struct after forking.
-		conn, err := net.FileConn(os.NewFile(connFd, ""))
+		conn, err := connection.FromFD(connFd)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"error":  err,
-				"connFd": connFd,
-			}).Errorln("Couldn't make a conn object from file descriptor.")
 			return
 		}
 		srvr := server.NewServer(config)

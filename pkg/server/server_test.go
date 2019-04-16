@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"testing"
+	"time"
 )
 
 func TestServer_PerformLogin(t *testing.T) {
@@ -10,12 +11,20 @@ func TestServer_PerformLogin(t *testing.T) {
 	stdin := bytes.NewBufferString("test\nsecret\n")
 	stdout := bytes.NewBufferString("")
 	stderr := bytes.NewBufferString("")
-	_, username, err := srvr.PerformLogin(stdin, stdout, stderr)
-	if err != nil {
-		t.Error("Couldn't login: " + err.Error())
-	}
-	if username != "test" {
-		t.Error("Wrong username returned.")
+	timeout := make(chan bool, 1)
+	loginChan := make(chan LoginResult)
+	go func() {
+		time.Sleep(time.Second)
+		timeout <- true
+	}()
+	srvr.PerformLogin(loginChan, stdin, stdout, stderr)
+	select {
+	case loginResult := <-loginChan:
+		if loginResult.user.Name != "test" {
+			t.Error("Wrong username returned: " + loginResult.user.String())
+		}
+	case <-timeout:
+		t.Fail()
 	}
 }
 

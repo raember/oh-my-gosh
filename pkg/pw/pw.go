@@ -35,23 +35,23 @@ type PassWd struct {
 
 // The GetPwByName() function returns a pointer to a structure containing the broken-out fields of the record in the
 // password database (e.g., the local password file /etc/passwd, NIS, and LDAP) that matches the username name.
-func GetPwByName(username string) (PassWd, error) {
+func GetPwByName(username string) (*PassWd, error) {
 	return convertToPasswd(C.getpwnam(C.CString(username)))
 }
 
 // The GetPwByUid() function returns a pointer to a structure containing the broken-out fields of the record in the
 // password database that matches the user ID uid.
-func GetPwByUid(uid uint32) (PassWd, error) {
+func GetPwByUid(uid uint32) (*PassWd, error) {
 	return convertToPasswd(C.getpwuid(C.uint(uid)))
 }
 
-func convertToPasswd(cpasswd *C.struct_passwd) (PassWd, error) {
+func convertToPasswd(cpasswd *C.struct_passwd) (*PassWd, error) {
 	if cpasswd == nil {
 		err := errors.New("got null pointer instead of *C.struct_passwd")
 		log.WithField("error", err).Warnln("Lookup failed.")
-		return PassWd{}, err
+		return &PassWd{}, err
 	}
-	return PassWd{
+	passWd := &PassWd{
 		Name:     C.GoString(cpasswd.pw_name),
 		Password: C.GoString(cpasswd.pw_passwd),
 		Uid:      uint32(cpasswd.pw_uid),
@@ -59,5 +59,13 @@ func convertToPasswd(cpasswd *C.struct_passwd) (PassWd, error) {
 		Gecos:    C.GoString(cpasswd.pw_gecos),
 		HomeDir:  C.GoString(cpasswd.pw_dir),
 		Shell:    C.GoString(cpasswd.pw_shell),
-	}, nil
+	}
+	log.WithFields(log.Fields{
+		"USER":  passWd.Name,
+		"UID":   passWd.Uid,
+		"GID":   passWd.Gid,
+		"HOME":  passWd.HomeDir,
+		"SHELL": passWd.Shell,
+	}).Println("Looked up user.")
+	return passWd, nil
 }

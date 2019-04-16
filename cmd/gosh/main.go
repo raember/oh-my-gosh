@@ -34,6 +34,11 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+	err = client.PerformLogin(conn, conn)
+	if err != nil {
+		os.Exit(1)
+	}
+
 	go func() {
 		bufIn := bufio.NewReader(conn)
 		for {
