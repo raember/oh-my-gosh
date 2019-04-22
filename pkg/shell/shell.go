@@ -28,5 +28,6 @@ func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer) error {
 	if err != nil {
 		log.WithField("error", err).Errorln("An error occured.")
 	}
+	log.Debugln("Shell terminated.")
 	return err
 }

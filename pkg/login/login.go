@@ -163,20 +163,16 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 		}
 	}
 
-	return user, nil
-}
-
-func (user User) Setup() error {
-	log.Traceln("login.User.Setup")
 	passWd, err := pw.GetPwByName(user.Name)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
 		}).Errorln("Couldn't setup user.")
-		return err
+		return user, err
 	}
 	user.PassWd = passWd
-	return nil
+
+	return user, nil
 }
 
 func (user User) String() string {

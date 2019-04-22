@@ -35,10 +35,6 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 		return err
 	}
 
-	if err = user.Setup(); err != nil {
-		return err
-	}
-
 	err = server.checkForNologinFile(stdIn, stdOut)
 	if err != nil {
 		return err
