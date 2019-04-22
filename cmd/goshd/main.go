@@ -40,9 +40,7 @@ func main() {
 		if err != nil {
 			return
 		}
-		srvr := server.NewServer(config)
-		err = srvr.Serve(conn, conn)
-		if err != nil {
+		if err = server.NewServer(config).Serve(conn, conn); err != nil {
 			_ = conn.Close()
 		}
 		//pid, err := proc.Fork()

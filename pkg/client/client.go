@@ -100,7 +100,7 @@ func PerformLogin(in io.Reader, out io.Writer) error {
 			return err
 		}
 		if pkg.Done() {
-			return nil
+			return pkg.Error()
 		}
 		err = pkg.Ask(os.Stdin, out)
 		if err != nil {

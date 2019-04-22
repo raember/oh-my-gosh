@@ -15,5 +15,5 @@ LogLevel = "info"
 [Authentication]
 LoginGraceTime = 120
 PermitRootLogin = false
-MaxTries = 6
+MaxTries = 3
 MaxSessions = 10

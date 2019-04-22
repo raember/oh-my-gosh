@@ -50,16 +50,27 @@ func Open() (master *os.File, slave string, err error) {
 	log.Traceln("pty.Open")
 	m, err := C.posix_openpt(C.O_RDWR)
 	if err != nil {
-		return nil, "", ptyError("posix_openpt", err)
+		err = ptyError("posix_openpt", err)
+		log.WithField("error", err).Errorln("Couldn't open pseudo-terminal.")
+		return nil, "", err
 	}
 	if _, err := C.grantpt(m); err != nil {
+		err = ptyError("grantpt", err)
+		log.WithField("error", err).Errorln("Couldn't grant pseudo-terminal perms.")
 		C.close(m)
-		return nil, "", ptyError("grantpt", err)
+		return nil, "", err
 	}
 	if _, err := C.unlockpt(m); err != nil {
+		err = ptyError("unlockpt", err)
+		log.WithField("error", err).Errorln("Couldn't unlock pseudo-terminal.")
 		C.close(m)
-		return nil, "", ptyError("unlockpt", err)
+		return nil, "", err
 	}
 	slave = C.GoString(C.ptsname(m))
-	return os.NewFile(uintptr(m), "pty-master"), slave, nil
+	file := os.NewFile(uintptr(m), "pty-master")
+	log.WithFields(log.Fields{
+		"slave": slave,
+		"file":  file.Name(),
+	}).Infoln("Opened pseudo terminal.")
+	return file, slave, nil
 }

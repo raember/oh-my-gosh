@@ -77,8 +77,9 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 	user.Transaction = transaction
 	err = transaction.Authenticate(0)
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't authenticate.")
-		return user, err
+		authErr := &AuthError{Err: err.Error(), User: user.Name}
+		log.WithField("error", authErr.Error()).Errorln("Couldn't authenticate.")
+		return user, authErr
 	}
 	log.Infoln("Authentication succeeded.")
 	_, _ = out.WriteString(connection.AuthSucceededPacket{}.String())
@@ -165,16 +166,6 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 	return user, nil
 }
 
-type AuthError struct {
-	Err  string
-	User string
-}
-
-func (ae AuthError) Error() string {
-	log.Traceln("login.AuthError.Error")
-	return fmt.Sprintf(ae.Err, ae.User)
-}
-
 func (user User) Setup() error {
 	log.Traceln("login.User.Setup")
 	passWd, err := pw.GetPwByName(user.Name)
@@ -191,4 +182,14 @@ func (user User) Setup() error {
 func (user User) String() string {
 	log.Traceln("login.User.String")
 	return user.Name
+}
+
+type AuthError struct {
+	Err  string
+	User string
+}
+
+func (e *AuthError) Error() string {
+	log.Traceln("login.AuthError.Error")
+	return fmt.Sprintf("%s: %s", e.User, e.Err)
 }

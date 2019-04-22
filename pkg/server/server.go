@@ -30,51 +30,27 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 		"stdIn":  stdIn,
 		"stdOut": stdOut,
 	}).Traceln("server.Server.Serve")
-	timeout := make(chan bool, 1)
-	loginChan := make(chan LoginResult)
-	go func() {
-		time.Sleep(time.Second * time.Duration(server.config.GetInt("Authentication.LoginGraceTime")))
-		timeout <- true
-	}()
-	server.PerformLogin(loginChan, stdIn, stdOut)
-	var user *login.User
-	var err error
-	select {
-	case loginResult := <-loginChan:
-		user = loginResult.user
-		err = loginResult.error
-	case <-timeout:
-		err = errors.New("login timed out")
-		log.WithField("error", err).Errorln("Login grace time exceeded.")
-		_, _ = stdOut.Write([]byte(connection.TimeoutPacket{}.String()))
-		return err
-	}
+	user, err := server.PerformLogin(stdIn, stdOut)
 	if err != nil {
 		return err
 	}
-	err = user.Setup()
-	if err != nil {
-		return err
-	}
-	file, name, err := pty.Open()
-	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't open pseudo-terminal.")
-		return err
-	}
-	log.WithField("slavename", name).Infoln("Pts")
-	log.WithField("filename", file.Name()).Infoln("File")
 
-	if _, err := os.Stat("/etc/motd"); err == nil {
-		motd, err := ioutil.ReadFile("/etc/motd")
-		if err != nil {
-			log.WithField("error", err).Errorln("Couldn't read message of the day.")
-			return err
-		}
-		log.Println(motd)
+	if err = user.Setup(); err != nil {
+		return err
 	}
 
 	err = server.checkForNologinFile(stdIn, stdOut)
 	if err != nil {
+		return err
+	}
+
+	// TODO: Redirect traffic through pts to the pty
+	_, _, err = pty.Open()
+	if err != nil {
+		return err
+	}
+
+	if err = server.printMotD(stdIn, stdOut); err != nil {
 		return err
 	}
 
@@ -88,39 +64,64 @@ type LoginResult struct {
 }
 
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-func (server Server) PerformLogin(loginChan chan LoginResult, stdIn io.Reader, stdOut io.Writer) {
+func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.User, error) {
 	log.WithFields(log.Fields{
-		"loginChan": loginChan,
-		"stdIn":     stdIn,
-		"stdOut":    stdOut,
+		"stdIn":  stdIn,
+		"stdOut": stdOut,
 	}).Traceln("server.Server.PerformLogin")
+	timeout := make(chan bool, 1)
+	loginChan := make(chan LoginResult)
 	go func() {
-		tries := 1
+		dur := time.Second * time.Duration(server.config.GetInt("Authentication.LoginGraceTime"))
+		log.WithField("duration", dur).Traceln("Go authentication timeout")
+		time.Sleep(dur)
+		timeout <- true
+		log.Traceln("End authentication timeout")
+	}()
+	go func() {
+		log.Traceln("Go authentication try")
+		try := 0
+		maxTries := server.config.GetInt("Authentication.MaxTries")
 		for {
-			tries++
+			try++
+			log.WithFields(log.Fields{
+				"try":      try,
+				"maxTries": maxTries,
+			}).Debugln("Start authentication.")
 			user, err := login.Authenticate(stdIn, stdOut)
 			if err != nil {
 				switch err.(type) {
-				case login.AuthError: // Auth error -> continue
-					log.WithField("username", user).Errorln("User failed to authenticate himself.")
-					if tries > server.config.GetInt("Authentication.MaxTries") {
-						err := errors.New("maximum tries reached")
-						log.WithField("error", err).Errorln("User reached maximum tries.")
+				case *login.AuthError: // Auth error -> continue
+					log.WithField("username", user.Name).Errorln("User failed to authenticate himself.")
+					if try >= maxTries {
+						err := errors.New("maximum try reached")
+						log.WithField("error", err).Errorln("User reached maximum try.")
+						_, _ = stdOut.Write([]byte(connection.MaxTriesExceededPacket{}.String()))
 						loginChan <- LoginResult{user, err}
 						return
 					}
 					continue
 				case error: // i.E. connection error -> abort
+					log.WithField("error", err).Errorln("Failed to authenticate user.")
 					loginChan <- LoginResult{user, err}
 					return
 				}
-			} else {
-				log.WithField("username", user).Infoln("User successfully authenticated himself.")
-				loginChan <- LoginResult{user, nil}
-				return
 			}
+			log.WithField("username", user.Name).Infoln("User successfully authenticated himself.")
+			loginChan <- LoginResult{user, nil}
+			log.Traceln("End authentication try")
+			return
 		}
 	}()
+	select {
+	case res := <-loginChan:
+		return res.user, res.error
+	case <-timeout:
+		err := errors.New("login timed out")
+		log.WithField("error", err).Errorln("Login grace time exceeded.")
+		_, _ = stdOut.Write([]byte(connection.TimeoutPacket{}.String()))
+		return nil, err
+	}
 }
 
 func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer) error {
@@ -137,4 +138,21 @@ func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer) erro
 	log.WithField("error", err).Infoln("/etc/nologin file exists. Login not permitted.")
 	_, _ = stdOut.Write(bytes)
 	return err
+}
+
+func (server Server) printMotD(stdIn io.Reader, stdOut io.Writer) error {
+	log.WithFields(log.Fields{
+		"stdIn":  stdIn,
+		"stdOut": stdOut,
+	}).Traceln("server.Server.printMotD")
+	if _, err := os.Stat("/etc/motd"); err == nil {
+		motd, err := ioutil.ReadFile("/etc/motd")
+		if err != nil {
+			log.WithField("error", err).Errorln("Couldn't read message of the day.")
+			return err
+		}
+		log.WithField("motd", string(motd)).Debugln("Read message of the day.")
+		_, _ = stdOut.Write(motd)
+	}
+	return nil
 }

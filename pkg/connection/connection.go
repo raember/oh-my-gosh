@@ -30,6 +30,7 @@ type Packet interface {
 	String() string
 	Done() bool
 	Field() string
+	Error() error
 }
 
 // =============== Username Packet ===============
@@ -72,6 +73,11 @@ func (req UsernamePacket) Field() string {
 	return req.Request
 }
 
+func (req UsernamePacket) Error() error {
+	log.Traceln("connection.UsernamePacket.Field")
+	return nil
+}
+
 // =============== Password Packet ===============
 
 type PasswordPacket struct {
@@ -110,6 +116,11 @@ func (req PasswordPacket) Field() string {
 	return req.Request
 }
 
+func (req PasswordPacket) Error() error {
+	log.Traceln("connection.PasswordPacket.Field")
+	return nil
+}
+
 // =============== Authentication Succeeded Packet ===============
 
 type AuthSucceededPacket struct{}
@@ -137,6 +148,11 @@ func (req AuthSucceededPacket) Done() bool {
 func (req AuthSucceededPacket) Field() string {
 	log.Traceln("connection.AuthSucceededPacket.Field")
 	return ""
+}
+
+func (req AuthSucceededPacket) Error() error {
+	log.Traceln("connection.AuthSucceededPacket.Field")
+	return nil
 }
 
 // =============== Timeout Packet ===============
@@ -168,6 +184,49 @@ func (req TimeoutPacket) Field() string {
 	return ""
 }
 
+func (req TimeoutPacket) Error() error {
+	log.Traceln("connection.TimeoutPacket.Field")
+	err := errors.New("timeout reached")
+	log.WithField("error", err).Errorln("Login failed because of timeout.")
+	return err
+}
+
+// =============== Maximum Tries Exceeded Packet ===============
+
+type MaxTriesExceededPacket struct{}
+
+func (req MaxTriesExceededPacket) Ask(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("connection.MaxTriesExceededPacket.Ask")
+	err := errors.New("nothing to ask")
+	log.WithField("error", err).Errorln("Not implemented!")
+	return err
+}
+
+func (req MaxTriesExceededPacket) String() string {
+	log.Traceln("connection.MaxTriesExceededPacket.String")
+	return "?X:\n"
+}
+
+func (req MaxTriesExceededPacket) Done() bool {
+	log.Traceln("connection.MaxTriesExceededPacket.Done")
+	return true
+}
+
+func (req MaxTriesExceededPacket) Field() string {
+	log.Traceln("connection.MaxTriesExceededPacket.Field")
+	return ""
+}
+
+func (req MaxTriesExceededPacket) Error() error {
+	log.Traceln("connection.MaxTriesExceededPacket.Field")
+	err := errors.New("maximum tries reached")
+	log.WithField("error", err).Errorln("Login failed because of maximum tries reached.")
+	return err
+}
+
 // Parser:
 
 func Parse(str string) (Packet, error) {
@@ -182,6 +241,8 @@ func Parse(str string) (Packet, error) {
 		return AuthSucceededPacket{}, nil
 	} else if str == "?T:" {
 		return TimeoutPacket{}, nil
+	} else if str == "?X:" {
+		return MaxTriesExceededPacket{}, nil
 	}
 	return nil, errors.New("couldn't parse packet")
 }
