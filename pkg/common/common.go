@@ -27,7 +27,7 @@ func init() {
 	lvl, ok := os.LookupEnv("LOG_LEVEL")
 	// LOG_LEVEL not set, let's default to debug
 	if !ok {
-		lvl = "debug"
+		lvl = "trace"
 	}
 	// parse string, this is built-in feature of logrus
 	ll, err := log.ParseLevel(strings.ToLower(lvl))

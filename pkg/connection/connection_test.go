@@ -11,7 +11,9 @@ func TestParseUsernamePacket(t *testing.T) {
 	}
 	switch pkg.(type) {
 	case UsernamePacket:
-		break
+		if pkg.Field() != "login: " {
+			t.Fail()
+		}
 	default:
 		t.Fail()
 	}
@@ -24,7 +26,9 @@ func TestParsePasswordPacket(t *testing.T) {
 	}
 	switch pkg.(type) {
 	case PasswordPacket:
-		break
+		if pkg.Field() != "password: " {
+			t.Fail()
+		}
 	default:
 		t.Fail()
 	}
@@ -37,7 +41,24 @@ func TestParseAuthSucceededPacket(t *testing.T) {
 	}
 	switch pkg.(type) {
 	case AuthSucceededPacket:
-		break
+		if pkg.Field() != "" {
+			t.Fail()
+		}
+	default:
+		t.Fail()
+	}
+}
+
+func TestParseTimeoutPacket(t *testing.T) {
+	pkg, err := Parse("?T:")
+	if err != nil {
+		t.Error(err)
+	}
+	switch pkg.(type) {
+	case TimeoutPacket:
+		if pkg.Field() != "" {
+			t.Fail()
+		}
 	default:
 		t.Fail()
 	}

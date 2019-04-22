@@ -42,7 +42,7 @@ func main() {
 			return
 		}
 		srvr := server.NewServer(config)
-		err = srvr.Serve(conn, conn, conn)
+		err = srvr.Serve(conn, conn)
 		if err != nil {
 			_ = conn.Close()
 		}

@@ -28,6 +28,7 @@ type Packet interface {
 	Ask(io.Reader, io.Writer) error
 	String() string
 	Done() bool
+	Field() string
 }
 
 type UsernamePacket struct {
@@ -45,16 +46,20 @@ func (req UsernamePacket) Ask(in io.Reader, out io.Writer) error {
 	}
 	username := strings.TrimSpace(str)
 	log.WithField("username", username).Debugln("Read user name. Sending user name to server.")
-	_, err = fmt.Fprintln(out, req.Request)
+	_, err = fmt.Fprintln(out, username)
 	return err
 }
 
 func (req UsernamePacket) String() string {
-	return "?U:" + req.String() + "\n"
+	return "?U:" + req.Request + "\n"
 }
 
 func (req UsernamePacket) Done() bool {
 	return false
+}
+
+func (req UsernamePacket) Field() string {
+	return req.Request
 }
 
 type PasswordPacket struct {
@@ -70,16 +75,20 @@ func (req PasswordPacket) Ask(in io.Reader, out io.Writer) error {
 	}
 	password := strings.TrimSpace(str)
 	log.WithField("password", password).Debugln("Read password. Sending password to server.")
-	_, err = fmt.Fprintln(out, req.Request)
+	_, err = fmt.Fprintln(out, password)
 	return err
 }
 
 func (req PasswordPacket) String() string {
-	return "?P:" + req.String() + "\n"
+	return "?P:" + req.Request + "\n"
 }
 
 func (req PasswordPacket) Done() bool {
 	return false
+}
+
+func (req PasswordPacket) Field() string {
+	return req.Request
 }
 
 // Authentication succeeded. No need to wait for more packets
@@ -94,16 +103,43 @@ func (req AuthSucceededPacket) String() string {
 }
 
 func (req AuthSucceededPacket) Done() bool {
-	return false
+	return true
+}
+
+func (req AuthSucceededPacket) Field() string {
+	return ""
+}
+
+// Authentication succeeded. No need to wait for more packets
+type TimeoutPacket struct{}
+
+func (req TimeoutPacket) Ask(in io.Reader, out io.Writer) error {
+	return errors.New("nothing to ask")
+}
+
+func (req TimeoutPacket) String() string {
+	return "?T:\n"
+}
+
+func (req TimeoutPacket) Done() bool {
+	return true
+}
+
+func (req TimeoutPacket) Field() string {
+	return ""
 }
 
 func Parse(str string) (Packet, error) {
 	if strings.HasPrefix(str, "?U:") {
-		return UsernamePacket{}, nil
+		str = str[3:]
+		return UsernamePacket{str}, nil
 	} else if strings.HasPrefix(str, "?P:") {
-		return PasswordPacket{}, nil
+		str = str[3:]
+		return PasswordPacket{str}, nil
 	} else if str == "?S:" {
 		return AuthSucceededPacket{}, nil
+	} else if str == "?T:" {
+		return TimeoutPacket{}, nil
 	}
 	return nil, errors.New("couldn't parse packet")
 }

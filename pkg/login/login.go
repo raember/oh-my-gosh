@@ -11,7 +11,6 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"io"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -22,44 +21,58 @@ type User struct {
 	PassWd      *pw.PassWd
 }
 
-func Authenticate(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*User, error) {
+func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 	if os.Getuid() != 0 {
 		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different user won't work.")
 	}
 
 	in := bufio.NewReader(stdIn)
+	out := bufio.NewWriter(stdOut)
 	user := &User{"", nil, nil}
 	transaction, err := pam.StartFunc("goshd", "", func(style pam.Style, message string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
-			log.WithField("msg", message).Debugln("Reading password.")
-			_, _ = fmt.Fprint(stdOut, connection.PasswordPacket{message}.String())
+			log.WithField("message", message).Debugln("Reading password.")
+			_, _ = out.WriteString(connection.PasswordPacket{message}.String())
+			_ = out.Flush()
 			str, err := in.ReadString('\n')
 			if err != nil {
 				log.WithField("error", err).Errorln("Couldn't read password.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
-			log.WithField("str", str).Debugln("Read password.")
+			//pkg, err := connection.Parse(str)
+			//if err != nil {
+			//	log.WithField("error", err).Errorln("Couldn't parse answer packet")
+			//	return "", err
+			//}
+			//str = pkg.Field()
+			log.WithField("password", str).Debugln("Read password.")
 			return str, nil
 		case pam.PromptEchoOn:
-			log.WithField("msg", message).Debugln("Reading user name.")
-			_, _ = fmt.Fprint(stdOut, connection.UsernamePacket{message}.String())
+			log.WithField("message", message).Debugln("Reading user name.")
+			_, _ = out.WriteString(connection.UsernamePacket{message}.String())
+			_ = out.Flush()
 			str, err := in.ReadString('\n')
 			if err != nil {
 				log.WithField("error", err).Errorln("Couldn't read user name.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
-			log.WithField("str", str).Debugln("Read user name.")
-
+			//pkg, err := connection.Parse(str)
+			//if err != nil {
+			//	log.WithField("error", err).Errorln("Couldn't parse answer packet")
+			//	return "", err
+			//}
+			//str = pkg.Field()
+			log.WithField("user", str).Debugln("Read user name.")
 			user.Name = str
 			return str, nil
 		case pam.ErrorMsg:
-			log.WithField("msg", message).Errorln("An error occurred.")
+			log.WithField("message", message).Errorln("An error occurred.")
 			return "", nil
 		case pam.TextInfo:
-			log.WithField("msg", message).Debugln("Text received.")
+			log.WithField("message", message).Debugln("Text received.")
 			return "", nil
 		}
 		return "", errors.New("unrecognized message style")
@@ -80,10 +93,18 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*User, e
 		return user, err
 	}
 	log.Infoln("Authentication succeeded.")
-	_, _ = fmt.Fprint(stdOut, connection.AuthSucceededPacket{}.String())
+	_, _ = out.WriteString(connection.AuthSucceededPacket{}.String())
+	_ = out.Flush()
+
+	defer func() {
+		err := user.Transaction.CloseSession(pam.Silent)
+		if err != nil {
+			log.WithField("error", err).Errorln("Couldn't close transaction session.")
+			return
+		}
+	}()
 
 	// Print all the transaction commands:
-
 	err = user.Transaction.SetCred(pam.Silent)
 	if err != nil {
 		log.Errorln("Couldn't set credentials for the user.")
@@ -96,7 +117,6 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*User, e
 	if err != nil {
 		log.WithField("error", err).Errorln("Couldn't open a session.")
 	}
-	defer user.Transaction.CloseSession(pam.Silent)
 	str, err := user.Transaction.GetItem(pam.Service)
 	if err != nil {
 		log.WithField("error", err).Errorln("Failed getting Service from transaction.")
@@ -156,14 +176,6 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer) (*User, e
 	}
 
 	return user, nil
-}
-
-func tput(stdIn io.Reader, stdOut io.Writer, stdErr io.Writer, args ...string) error {
-	cmd := exec.Command("tput", args...)
-	//cmd.Stdin = stdIn
-	cmd.Stdout = stdOut
-	//cmd.Stderr = stdErr
-	return cmd.Run()
 }
 
 type AuthError struct {

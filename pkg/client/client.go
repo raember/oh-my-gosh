@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -91,7 +92,7 @@ func PerformLogin(in io.Reader, out io.Writer) error {
 		if pkg.Done() {
 			return nil
 		}
-		err = pkg.Ask(in, out)
+		err = pkg.Ask(os.Stdin, out)
 		if err != nil {
 			log.WithField("error", err).Errorln("Couldn't perform request.")
 			return err

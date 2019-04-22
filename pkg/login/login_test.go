@@ -8,10 +8,10 @@ import (
 func TestAuthenticate(t *testing.T) {
 	stdin := bytes.NewBufferString("test\nsecret\n")
 	stdout := bytes.NewBufferString("")
-	stderr := bytes.NewBufferString("")
-	user, err := Authenticate(stdin, stdout, stderr)
+	user, err := Authenticate(stdin, stdout)
 	if err != nil {
 		t.Error("Couldn't login: " + err.Error())
+		return
 	}
 	if user.Name != "test" {
 		t.Error("Wrong username returned.")
