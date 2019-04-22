@@ -21,6 +21,7 @@ import "C"
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"syscall"
 )
@@ -32,15 +33,21 @@ type PtyError struct {
 }
 
 func ptyError(name string, err error) *PtyError {
+	log.WithFields(log.Fields{
+		"name": name,
+		"err":  err,
+	}).Traceln("pty.ptyError")
 	return &PtyError{name, err.Error(), err.(syscall.Errno)}
 }
 
 func (e *PtyError) Error() string {
+	log.Traceln("pty.PtyError.Error")
 	return fmt.Sprintf("%s: %s", e.FuncName, e.ErrorString)
 }
 
 // Open returns a master pty and the name of the linked slave tty.
 func Open() (master *os.File, slave string, err error) {
+	log.Traceln("pty.Open")
 	m, err := C.posix_openpt(C.O_RDWR)
 	if err != nil {
 		return nil, "", ptyError("posix_openpt", err)

@@ -20,11 +20,16 @@ type Server struct {
 }
 
 func NewServer(config *viper.Viper) Server {
+	log.WithField("config", config).Traceln("server.NewServer")
 	return Server{config: config}
 }
 
 // Serve a newly established connection.
 func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
+	log.WithFields(log.Fields{
+		"stdIn":  stdIn,
+		"stdOut": stdOut,
+	}).Traceln("server.Server.Serve")
 	timeout := make(chan bool, 1)
 	loginChan := make(chan LoginResult)
 	go func() {
@@ -73,7 +78,6 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 		return err
 	}
 
-	// TODO: Make shell transmit everything over to client CORRECTLY.
 	// TODO: Fix segfault
 	return shell.Execute(user.PassWd.Shell, stdIn, stdOut)
 }
@@ -85,6 +89,11 @@ type LoginResult struct {
 
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
 func (server Server) PerformLogin(loginChan chan LoginResult, stdIn io.Reader, stdOut io.Writer) {
+	log.WithFields(log.Fields{
+		"loginChan": loginChan,
+		"stdIn":     stdIn,
+		"stdOut":    stdOut,
+	}).Traceln("server.Server.PerformLogin")
 	go func() {
 		tries := 1
 		for {
@@ -115,6 +124,10 @@ func (server Server) PerformLogin(loginChan chan LoginResult, stdIn io.Reader, s
 }
 
 func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer) error {
+	log.WithFields(log.Fields{
+		"stdIn":  stdIn,
+		"stdOut": stdOut,
+	}).Traceln("server.Server.checkForNologinFile")
 	bytes, err := ioutil.ReadFile("/etc/nologin")
 	if err != nil {
 		log.Debugln("/etc/nologin file not found. Login permitted.")

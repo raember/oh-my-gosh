@@ -15,6 +15,10 @@ type Lookout struct {
 }
 
 func NewLookout(protocol string, port int) (*Lookout, error) {
+	log.WithFields(log.Fields{
+		"protocol": protocol,
+		"port":     port,
+	}).Traceln("server.NewLookout")
 	if port < 0 {
 		err := errors.New("port cannot be negative")
 		log.WithFields(log.Fields{
@@ -47,6 +51,10 @@ func NewLookout(protocol string, port int) (*Lookout, error) {
 }
 
 func (lookout Lookout) Listen(certpath string, keypath string) (uintptr, error) {
+	log.WithFields(log.Fields{
+		"certpath": certpath,
+		"keypath":  keypath,
+	}).Traceln("server.Lookout.Listen")
 	protocol := lookout.address.Scheme
 	portStr := lookout.address.Port()
 	port, err := strconv.Atoi(portStr)
@@ -69,6 +77,10 @@ func (lookout Lookout) Listen(certpath string, keypath string) (uintptr, error) 
 }
 
 func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls.Certificate, error) {
+	log.WithFields(log.Fields{
+		"certPath":    certPath,
+		"keyFilePath": keyFilePath,
+	}).Traceln("server.Lookout.loadCertKeyPair")
 	cert, err := tls.LoadX509KeyPair(certPath, keyFilePath)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -86,6 +98,10 @@ func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls
 }
 
 func WaitForConnections(socketFd uintptr, handler func(uintptr)) error {
+	log.WithFields(log.Fields{
+		"socketFd": socketFd,
+		"handler":  handler,
+	}).Traceln("server.WaitForConnections")
 	for {
 		connFd, err := socket.Accept(socketFd)
 		if err != nil {
@@ -94,10 +110,13 @@ func WaitForConnections(socketFd uintptr, handler func(uintptr)) error {
 			}).Errorln("Failed opening connection.")
 			return err
 		}
-		//log.WithFields(log.Fields{
-		//	"remote": common.AddrToStr(connFd.RemoteAddr()),
-		//}).Infoln("Connection established.")
 
+		addr, err := socket.GetPeerName(connFd)
+		if err != nil {
+			return err
+		}
+		log.Infoln(addr.String())
+		log.WithField("connFd", connFd).Debugln("Handle connection")
 		go handler(connFd)
 	}
 }

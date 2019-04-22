@@ -12,15 +12,16 @@ import (
 
 var certFile = flag.String("cert", common.CERTFILE, "Certificate file")
 var keyFile = flag.String("key", common.KEYFILE, "Key file")
-var configPath = flag.String("conf", common.CONFIGPATH, "Config path")
+var configPath = flag.String("conf", common.CONFIGPATH, "LoadConfig path")
 
 func main() {
+	log.Traceln("goshd.main")
 	flag.Parse()
 	log.WithFields(log.Fields{"certFile": *certFile}).Debugln("Certificate file set.")
 	log.WithFields(log.Fields{"keyFile": *keyFile}).Debugln("Key file set.")
-	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("Config path set.")
+	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("LoadConfig path set.")
 
-	config := server.Config(*configPath)
+	config := server.LoadConfig(*configPath)
 	lookout, err := server.NewLookout(
 		config.GetString("Server.Protocol"),
 		config.GetInt("Server.Port"),
@@ -28,16 +29,14 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+
 	socketFd, err := lookout.Listen(*certFile, *keyFile)
 	if err != nil {
 		os.Exit(1)
 	}
 	err = server.WaitForConnections(socketFd, func(connFd uintptr) {
-		//log.WithFields(log.Fields{
-		//	"remote": common.AddrToStr(conn.RemoteAddr()),
-		//}).Debugln("Serving new connection.")
 		// TODO: Fix usage corruption of conn struct after forking.
-		conn, err := connection.FromFD(connFd)
+		conn, err := connection.FromFd(connFd)
 		if err != nil {
 			return
 		}

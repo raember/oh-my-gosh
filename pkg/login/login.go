@@ -22,6 +22,10 @@ type User struct {
 }
 
 func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
+	log.WithFields(log.Fields{
+		"stdIn":  stdIn,
+		"stdOut": stdOut,
+	}).Traceln("login.Authenticate")
 	if os.Getuid() != 0 {
 		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different user won't work.")
 	}
@@ -41,12 +45,6 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 				return "", err
 			}
 			str = strings.TrimSpace(str)
-			//pkg, err := connection.Parse(str)
-			//if err != nil {
-			//	log.WithField("error", err).Errorln("Couldn't parse answer packet")
-			//	return "", err
-			//}
-			//str = pkg.Field()
 			log.WithField("password", str).Debugln("Read password.")
 			return str, nil
 		case pam.PromptEchoOn:
@@ -59,12 +57,6 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 				return "", err
 			}
 			str = strings.TrimSpace(str)
-			//pkg, err := connection.Parse(str)
-			//if err != nil {
-			//	log.WithField("error", err).Errorln("Couldn't parse answer packet")
-			//	return "", err
-			//}
-			//str = pkg.Field()
 			log.WithField("user", str).Debugln("Read user name.")
 			user.Name = str
 			return str, nil
@@ -78,24 +70,33 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 		return "", errors.New("unrecognized message style")
 	})
 	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err.Error(),
-		}).Errorln("Couldn't start authentication.")
+		log.WithField("error", err).Errorln("Couldn't start authentication.")
 		return user, err
 	}
 
 	user.Transaction = transaction
 	err = transaction.Authenticate(0)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err.Error(),
-		}).Errorln("Couldn't authenticate.")
+		log.WithField("error", err).Errorln("Couldn't authenticate.")
 		return user, err
 	}
 	log.Infoln("Authentication succeeded.")
 	_, _ = out.WriteString(connection.AuthSucceededPacket{}.String())
 	_ = out.Flush()
 
+	// Print all the transaction commands:
+	err = user.Transaction.SetCred(pam.Silent)
+	if err != nil {
+		log.WithField("error", err).Errorln("Couldn't set credentials for the user.")
+	}
+	err = user.Transaction.AcctMgmt(pam.Silent)
+	if err != nil {
+		log.WithField("error", err).Errorln("Couldn't validate the user.")
+	}
+	err = user.Transaction.OpenSession(pam.Silent)
+	if err != nil {
+		log.WithField("error", err).Errorln("Couldn't open a session.")
+	}
 	defer func() {
 		err := user.Transaction.CloseSession(pam.Silent)
 		if err != nil {
@@ -103,20 +104,6 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 			return
 		}
 	}()
-
-	// Print all the transaction commands:
-	err = user.Transaction.SetCred(pam.Silent)
-	if err != nil {
-		log.Errorln("Couldn't set credentials for the user.")
-	}
-	err = user.Transaction.AcctMgmt(pam.Silent)
-	if err != nil {
-		log.Errorln("Couldn't validate the user.")
-	}
-	err = user.Transaction.OpenSession(pam.Silent)
-	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't open a session.")
-	}
 	str, err := user.Transaction.GetItem(pam.Service)
 	if err != nil {
 		log.WithField("error", err).Errorln("Failed getting Service from transaction.")
@@ -184,10 +171,12 @@ type AuthError struct {
 }
 
 func (ae AuthError) Error() string {
+	log.Traceln("login.AuthError.Error")
 	return fmt.Sprintf(ae.Err, ae.User)
 }
 
 func (user User) Setup() error {
+	log.Traceln("login.User.Setup")
 	passWd, err := pw.GetPwByName(user.Name)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -200,5 +189,6 @@ func (user User) Setup() error {
 }
 
 func (user User) String() string {
+	log.Traceln("login.User.String")
 	return user.Name
 }

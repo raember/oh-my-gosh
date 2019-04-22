@@ -8,12 +8,14 @@ import (
 )
 
 func setDefaults(config *viper.Viper) {
+	log.WithField("config", config).Traceln("client.setDefaults")
 	config.SetDefault("Client.Port", common.PORT)
 	config.SetDefault("Client.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
 }
 
 func Config(configpath string) *viper.Viper {
+	log.WithField("configpath", configpath).Traceln("client.LoadConfig")
 	config := viper.New()
 	config.SetConfigName(common.CLIENTNAME + "_config")
 	config.AddConfigPath(configpath)

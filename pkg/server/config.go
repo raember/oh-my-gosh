@@ -8,6 +8,7 @@ import (
 )
 
 func setDefaults(config *viper.Viper) {
+	log.WithField("config", config).Traceln("server.setDefaults")
 	config.SetDefault("Server.Port", common.PORT)
 	config.SetDefault("Server.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
@@ -20,7 +21,8 @@ func setDefaults(config *viper.Viper) {
 func init() {
 }
 
-func Config(configpath string) *viper.Viper {
+func LoadConfig(configpath string) *viper.Viper {
+	log.WithField("configpath", configpath).Traceln("server.LoadConfig")
 	config := viper.New()
 	config.SetConfigName(common.SERVERNAME + "_config")
 	config.AddConfigPath(configpath)
@@ -37,7 +39,7 @@ func Config(configpath string) *viper.Viper {
 	config.OnConfigChange(func(e fsnotify.Event) {
 		log.WithFields(log.Fields{
 			"name": e.Name,
-		}).Warnln("Config file changed.")
+		}).Warnln("LoadConfig file changed.")
 	})
 	return config
 }

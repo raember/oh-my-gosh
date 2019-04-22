@@ -8,7 +8,7 @@ import (
 )
 
 func TestServer_PerformLogin(t *testing.T) {
-	srvr := NewServer(Config(""))
+	srvr := NewServer(LoadConfig(""))
 	stdin := bytes.NewBufferString("")
 	stdout := bytes.NewBufferString("")
 	timeout := make(chan bool, 1)
@@ -36,5 +36,5 @@ func TestServer_Serve(t *testing.T) {
 	stdin.WriteString(connection.UsernamePacket{"test"}.String())
 	stdin.WriteString(connection.PasswordPacket{"secret"}.String())
 
-	_ = NewServer(Config("")).Serve(stdin, stdout)
+	_ = NewServer(LoadConfig("")).Serve(stdin, stdout)
 }

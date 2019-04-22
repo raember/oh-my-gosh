@@ -8,8 +8,13 @@ import (
 )
 
 func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer) error {
-	log.Trace("Executing shell")
+	log.WithFields(log.Fields{
+		"shellpath": shellpath,
+		"stdIn":     stdIn,
+		"stdOut":    stdOut,
+	}).Traceln("shell.Execute")
 	shell := exec.Command(shellpath, "--login")
+	// TODO: Make shell transmit everything over to client CORRECTLY.
 	pid, err := syscall.Setsid()
 	if err != nil {
 		log.WithField("error", err).Errorln("Failed setting sid.")

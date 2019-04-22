@@ -36,16 +36,19 @@ type PassWd struct {
 // The GetPwByName() function returns a pointer to a structure containing the broken-out fields of the record in the
 // password database (e.g., the local password file /etc/passwd, NIS, and LDAP) that matches the username name.
 func GetPwByName(username string) (*PassWd, error) {
+	log.WithField("username", username).Traceln("pw.GetPwByName")
 	return convertToPasswd(C.getpwnam(C.CString(username)))
 }
 
 // The GetPwByUid() function returns a pointer to a structure containing the broken-out fields of the record in the
 // password database that matches the user ID uid.
 func GetPwByUid(uid uint32) (*PassWd, error) {
+	log.WithField("uid", uid).Traceln("pw.GetPwByUid")
 	return convertToPasswd(C.getpwuid(C.uint(uid)))
 }
 
 func convertToPasswd(cpasswd *C.struct_passwd) (*PassWd, error) {
+	log.WithField("cpasswd", cpasswd).Traceln("pw.convertToPasswd")
 	if cpasswd == nil {
 		err := errors.New("got null pointer instead of *C.struct_passwd")
 		log.WithField("error", err).Warnln("Lookup failed.")

@@ -14,6 +14,7 @@ import (
 var configPath = flag.String("conf", common.CONFIGPATH, "Config path")
 
 func main() {
+	log.Traceln("gosh.main")
 	flag.Parse()
 	address := flag.Arg(0)
 	if address == "" {

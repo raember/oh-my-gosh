@@ -19,6 +19,11 @@ type Client struct {
 }
 
 func NewClient(protocol string, address string, port int) (*Client, error) {
+	log.WithFields(log.Fields{
+		"protocol": protocol,
+		"address":  address,
+		"port":     port,
+	}).Traceln("client.NewClient")
 	if port < 0 {
 		err := errors.New("connection cannot be negative")
 		log.WithFields(log.Fields{
@@ -56,6 +61,7 @@ func NewClient(protocol string, address string, port int) (*Client, error) {
 }
 
 func (client Client) Dial() (net.Conn, error) {
+	log.Traceln("client.Client.Dial")
 	address := client.address
 	//tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	log.WithFields(log.Fields{
@@ -72,11 +78,15 @@ func (client Client) Dial() (net.Conn, error) {
 		}).Errorln("Couldn't connect to host.")
 		return nil, err
 	}
-	log.WithField("remote", common.AddrToStr(conn.RemoteAddr())).Infoln("Connection established.")
+	log.WithField("remote", conn.RemoteAddr()).Infoln("Connection established.")
 	return conn, nil
 }
 
 func PerformLogin(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("client.PerformLogin")
 	bIn := bufio.NewReader(in)
 	for {
 		str, err := bIn.ReadString('\n')

@@ -12,7 +12,8 @@ import (
 	"strings"
 )
 
-func FromFD(fd uintptr) (net.Conn, error) {
+func FromFd(fd uintptr) (net.Conn, error) {
+	log.WithField("fd", fd).Traceln("connection.FromFd")
 	conn, err := net.FileConn(os.NewFile(fd, ""))
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -31,11 +32,17 @@ type Packet interface {
 	Field() string
 }
 
+// =============== Username Packet ===============
+
 type UsernamePacket struct {
 	Request string
 }
 
 func (req UsernamePacket) Ask(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("connection.UsernamePacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading user name.")
 	_, _ = os.Stdout.WriteString(req.Request)
 	bIn := bufio.NewReader(in)
@@ -51,22 +58,31 @@ func (req UsernamePacket) Ask(in io.Reader, out io.Writer) error {
 }
 
 func (req UsernamePacket) String() string {
+	log.Traceln("connection.UsernamePacket.String")
 	return "?U:" + req.Request + "\n"
 }
 
 func (req UsernamePacket) Done() bool {
+	log.Traceln("connection.UsernamePacket.Done")
 	return false
 }
 
 func (req UsernamePacket) Field() string {
+	log.Traceln("connection.UsernamePacket.Field")
 	return req.Request
 }
+
+// =============== Password Packet ===============
 
 type PasswordPacket struct {
 	Request string
 }
 
 func (req PasswordPacket) Ask(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("connection.PasswordPacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading password.")
 	str, err := speakeasy.Ask(req.Request)
 	if err != nil {
@@ -80,56 +96,82 @@ func (req PasswordPacket) Ask(in io.Reader, out io.Writer) error {
 }
 
 func (req PasswordPacket) String() string {
+	log.Traceln("connection.PasswordPacket.String")
 	return "?P:" + req.Request + "\n"
 }
 
 func (req PasswordPacket) Done() bool {
+	log.Traceln("connection.PasswordPacket.Done")
 	return false
 }
 
 func (req PasswordPacket) Field() string {
+	log.Traceln("connection.PasswordPacket.Field")
 	return req.Request
 }
 
-// Authentication succeeded. No need to wait for more packets
+// =============== Authentication Succeeded Packet ===============
+
 type AuthSucceededPacket struct{}
 
 func (req AuthSucceededPacket) Ask(in io.Reader, out io.Writer) error {
-	return errors.New("nothing to ask")
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("connection.AuthSucceededPacket.Ask")
+	err := errors.New("nothing to ask")
+	log.WithField("error", err).Errorln("Not implemented!")
+	return err
 }
 
 func (req AuthSucceededPacket) String() string {
+	log.Traceln("connection.AuthSucceededPacket.String")
 	return "?S:\n"
 }
 
 func (req AuthSucceededPacket) Done() bool {
+	log.Traceln("connection.AuthSucceededPacket.Done")
 	return true
 }
 
 func (req AuthSucceededPacket) Field() string {
+	log.Traceln("connection.AuthSucceededPacket.Field")
 	return ""
 }
 
-// Authentication succeeded. No need to wait for more packets
+// =============== Timeout Packet ===============
+
 type TimeoutPacket struct{}
 
 func (req TimeoutPacket) Ask(in io.Reader, out io.Writer) error {
-	return errors.New("nothing to ask")
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("connection.TimeoutPacket.Ask")
+	err := errors.New("nothing to ask")
+	log.WithField("error", err).Errorln("Not implemented!")
+	return err
 }
 
 func (req TimeoutPacket) String() string {
+	log.Traceln("connection.TimeoutPacket.String")
 	return "?T:\n"
 }
 
 func (req TimeoutPacket) Done() bool {
+	log.Traceln("connection.TimeoutPacket.Done")
 	return true
 }
 
 func (req TimeoutPacket) Field() string {
+	log.Traceln("connection.TimeoutPacket.Field")
 	return ""
 }
 
+// Parser:
+
 func Parse(str string) (Packet, error) {
+	log.WithField("str", str).Traceln("connection.Parse")
 	if strings.HasPrefix(str, "?U:") {
 		str = str[3:]
 		return UsernamePacket{str}, nil
