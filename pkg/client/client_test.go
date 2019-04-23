@@ -10,6 +10,8 @@ func TestNewClient(t *testing.T) {
 	client, err := NewClient(common.TCP, common.LOCALHOST, common.PORT)
 	if err != nil {
 		t.Error("Failed creating a client")
+		t.Fail()
+		return
 	}
 	if client.address.Host != common.LOCALHOST+":"+strconv.Itoa(common.PORT) {
 		t.Error("Malformed address returned")

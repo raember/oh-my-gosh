@@ -12,6 +12,8 @@ func TestNewLookout(t *testing.T) {
 	lookout, err := NewLookout(common.TCP, common.PORT)
 	if err != nil {
 		t.Error("Failed creating a lookout")
+		t.Fail()
+		return
 	}
 	if lookout.address.Host != common.LOCALHOST+":"+strconv.Itoa(common.PORT) {
 		t.Error("Malformed address returned")

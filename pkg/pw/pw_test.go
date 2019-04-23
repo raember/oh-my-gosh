@@ -6,6 +6,8 @@ func TestGetPwByName(t *testing.T) {
 	passwd, err := GetPwByName("test")
 	if err != nil {
 		t.Error("Couldn't look up test user: " + err.Error())
+		t.Fail()
+		return
 	}
 	if passwd.Name != "test" {
 		t.Error("Name of looked up test user doesn't match.")
@@ -29,6 +31,8 @@ func TestGetPwByUid(t *testing.T) {
 	passwd, err := GetPwByUid(uid)
 	if err != nil {
 		t.Error("Couldn't look up test user: " + err.Error())
+		t.Fail()
+		return
 	}
 	if passwd.Name != "test" {
 		t.Error("Name of looked up test user doesn't match.")

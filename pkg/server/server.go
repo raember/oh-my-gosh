@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -41,17 +43,66 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 	}
 
 	// TODO: Redirect traffic through pts to the pty
-	_, _, err = pty.Open()
+	ptyFile, ptsName, err := pty.Open()
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err = ptyFile.Close(); err != nil {
+			log.WithField("error", err).Errorln("Couldn't close pty file.")
+		} else {
+			log.Debugln("Closed pty file.")
+		}
+	}()
 
 	if err = server.printMotD(stdIn, stdOut); err != nil {
 		return err
 	}
 
-	// TODO: Fix segfault
-	return shell.Execute(user.PassWd.Shell, stdIn, stdOut)
+	ptsFile, err := os.Create(ptsName)
+	if err != nil {
+		log.WithField("error", err).Errorln("Couldn't open pts file.")
+		return err
+	}
+	defer func() {
+		if err = ptsFile.Close(); err != nil {
+			log.WithField("error", err).Errorln("Couldn't close pts file.")
+		} else {
+			log.Debugln("Closed pts file.")
+		}
+	}()
+
+	// Forward client to pts(shell)
+	go func() {
+		bufIn := bufio.NewReader(stdIn)
+		for {
+			n, err := bufIn.WriteTo(ptsFile)
+			if err != nil {
+				log.WithField("error", err).Errorln("Couldn't read from client.")
+				break
+			}
+			if n > 0 {
+				log.Debugln("Written " + strconv.Itoa(int(n)) + " bytes to pts.")
+			}
+		}
+	}()
+
+	// Forward pts(shell) output to client
+	go func() {
+		bufIn := bufio.NewReader(ptsFile)
+		for {
+			n, err := bufIn.WriteTo(stdOut)
+			if err != nil {
+				log.WithField("error", err).Errorln("Couldn't read from pts.")
+				break
+			}
+			if n > 0 {
+				log.Debugln("Read " + strconv.Itoa(int(n)) + " bytes from pts.")
+			}
+		}
+	}()
+
+	return shell.Execute(user.PassWd.Shell, ptyFile, ptyFile)
 }
 
 type LoginResult struct {
