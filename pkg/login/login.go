@@ -25,7 +25,7 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 	log.WithFields(log.Fields{
 		"stdIn":  stdIn,
 		"stdOut": stdOut,
-	}).Traceln("login.Authenticate")
+	}).Traceln("--> login.Authenticate")
 	if os.Getuid() != 0 {
 		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different user won't work.")
 	}
@@ -41,7 +41,7 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 			_ = out.Flush()
 			str, err := in.ReadString('\n')
 			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read password.")
+				log.WithError(err).Errorln("Couldn't read password.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
@@ -53,7 +53,7 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 			_ = out.Flush()
 			str, err := in.ReadString('\n')
 			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read user name.")
+				log.WithError(err).Errorln("Couldn't read user name.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
@@ -70,7 +70,7 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 		return "", errors.New("unrecognized message style")
 	})
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't start authentication.")
+		log.WithError(err).Errorln("Couldn't start authentication.")
 		return user, err
 	}
 
@@ -88,74 +88,74 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 	// Print all the transaction commands:
 	err = user.Transaction.SetCred(pam.Silent)
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't set credentials for the user.")
+		log.WithError(err).Errorln("Couldn't set credentials for the user.")
 	}
 	err = user.Transaction.AcctMgmt(pam.Silent)
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't validate the user.")
+		log.WithError(err).Errorln("Couldn't validate the user.")
 	}
 	err = user.Transaction.OpenSession(pam.Silent)
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't open a session.")
+		log.WithError(err).Errorln("Couldn't open a session.")
 	}
 	defer func() {
 		err := user.Transaction.CloseSession(pam.Silent)
 		if err != nil {
-			log.WithField("error", err).Errorln("Couldn't close transaction session.")
+			log.WithError(err).Errorln("Couldn't close transaction session.")
 			return
 		}
 	}()
 	str, err := user.Transaction.GetItem(pam.Service)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Service from transaction.")
+		log.WithError(err).Errorln("Failed getting Service from transaction.")
 	} else {
 		log.Infoln("Service: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.User)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting User from transaction.")
+		log.WithError(err).Errorln("Failed getting User from transaction.")
 	} else {
 		log.Infoln("User: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.Tty)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Tty from transaction.")
+		log.WithError(err).Errorln("Failed getting Tty from transaction.")
 	} else {
 		log.Infoln("Tty: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.Rhost)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Rhost from transaction.")
+		log.WithError(err).Errorln("Failed getting Rhost from transaction.")
 	} else {
 		log.Infoln("Rhost: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.Authtok)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Authtok from transaction.")
+		log.WithError(err).Errorln("Failed getting Authtok from transaction.")
 	} else {
 		log.Infoln("Authtok: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.Oldauthtok)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Oldauthtok from transaction.")
+		log.WithError(err).Errorln("Failed getting Oldauthtok from transaction.")
 	} else {
 		log.Infoln("Oldauthtok: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.Ruser)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Ruser from transaction.")
+		log.WithError(err).Errorln("Failed getting Ruser from transaction.")
 	} else {
 		log.Infoln("Ruser: " + str)
 	}
 	str, err = user.Transaction.GetItem(pam.UserPrompt)
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting UserPrompt from transaction.")
+		log.WithError(err).Errorln("Failed getting UserPrompt from transaction.")
 	} else {
 		log.Infoln("UserPrompt: " + str)
 	}
 	strs, err := user.Transaction.GetEnvList()
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed getting Env from transaction.")
+		log.WithError(err).Errorln("Failed getting Env from transaction.")
 	} else {
 		log.Println("#envs: " + strconv.Itoa(len(strs)))
 		for _, str := range strs {
@@ -176,7 +176,7 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 }
 
 func (user User) String() string {
-	log.Traceln("login.User.String")
+	log.Traceln("--> login.User.String")
 	return user.Name
 }
 
@@ -186,6 +186,6 @@ type AuthError struct {
 }
 
 func (e *AuthError) Error() string {
-	log.Traceln("login.AuthError.Error")
+	log.Traceln("--> login.AuthError.Error")
 	return fmt.Sprintf("%s: %s", e.User, e.Err)
 }

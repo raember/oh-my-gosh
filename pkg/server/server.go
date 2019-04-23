@@ -22,7 +22,7 @@ type Server struct {
 }
 
 func NewServer(config *viper.Viper) Server {
-	log.WithField("config", config).Traceln("server.NewServer")
+	log.WithField("config", config).Traceln("--> server.NewServer")
 	return Server{config: config}
 }
 
@@ -31,7 +31,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 	log.WithFields(log.Fields{
 		"stdIn":  stdIn,
 		"stdOut": stdOut,
-	}).Traceln("server.Server.Serve")
+	}).Traceln("--> server.Server.Serve")
 	user, err := server.PerformLogin(stdIn, stdOut)
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 	}
 	defer func() {
 		if err = ptyFile.Close(); err != nil {
-			log.WithField("error", err).Errorln("Couldn't close pty file.")
+			log.WithError(err).Errorln("Couldn't close pty file.")
 		} else {
 			log.Debugln("Closed pty file.")
 		}
@@ -61,12 +61,12 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 
 	ptsFile, err := os.Create(ptsName)
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't open pts file.")
+		log.WithError(err).Errorln("Couldn't open pts file.")
 		return err
 	}
 	defer func() {
 		if err = ptsFile.Close(); err != nil {
-			log.WithField("error", err).Errorln("Couldn't close pts file.")
+			log.WithError(err).Errorln("Couldn't close pts file.")
 		} else {
 			log.Debugln("Closed pts file.")
 		}
@@ -78,7 +78,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 		for {
 			n, err := bufIn.WriteTo(ptsFile)
 			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read from client.")
+				log.WithError(err).Errorln("Couldn't read from client.")
 				break
 			}
 			if n > 0 {
@@ -93,7 +93,7 @@ func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
 		for {
 			n, err := bufIn.WriteTo(stdOut)
 			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read from pts.")
+				log.WithError(err).Errorln("Couldn't read from pts.")
 				break
 			}
 			if n > 0 {
@@ -115,7 +115,7 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.Use
 	log.WithFields(log.Fields{
 		"stdIn":  stdIn,
 		"stdOut": stdOut,
-	}).Traceln("server.Server.PerformLogin")
+	}).Traceln("--> server.Server.PerformLogin")
 	timeout := make(chan bool, 1)
 	loginChan := make(chan LoginResult)
 	go func() {
@@ -142,14 +142,14 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.Use
 					log.WithField("username", user.Name).Errorln("User failed to authenticate himself.")
 					if try >= maxTries {
 						err := errors.New("maximum try reached")
-						log.WithField("error", err).Errorln("User reached maximum try.")
+						log.WithError(err).Errorln("User reached maximum try.")
 						_, _ = stdOut.Write([]byte(connection.MaxTriesExceededPacket{}.String()))
 						loginChan <- LoginResult{user, err}
 						return
 					}
 					continue
 				case error: // i.E. connection error -> abort
-					log.WithField("error", err).Errorln("Failed to authenticate user.")
+					log.WithError(err).Errorln("Failed to authenticate user.")
 					loginChan <- LoginResult{user, err}
 					return
 				}
@@ -165,7 +165,7 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.Use
 		return res.user, res.error
 	case <-timeout:
 		err := errors.New("login timed out")
-		log.WithField("error", err).Errorln("Login grace time exceeded.")
+		log.WithError(err).Errorln("Login grace time exceeded.")
 		_, _ = stdOut.Write([]byte(connection.TimeoutPacket{}.String()))
 		return nil, err
 	}
@@ -175,14 +175,14 @@ func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer) erro
 	log.WithFields(log.Fields{
 		"stdIn":  stdIn,
 		"stdOut": stdOut,
-	}).Traceln("server.Server.checkForNologinFile")
+	}).Traceln("--> server.Server.checkForNologinFile")
 	bytes, err := ioutil.ReadFile("/etc/nologin")
 	if err != nil {
 		log.Debugln("/etc/nologin file not found. Login permitted.")
 		return nil
 	}
 	err = errors.New("/etc/nologin file exists: no login allowed")
-	log.WithField("error", err).Infoln("/etc/nologin file exists. Login not permitted.")
+	log.WithError(err).Errorln("/etc/nologin file exists. Login not permitted.")
 	_, _ = stdOut.Write(bytes)
 	return err
 }
@@ -191,11 +191,11 @@ func (server Server) printMotD(stdIn io.Reader, stdOut io.Writer) error {
 	log.WithFields(log.Fields{
 		"stdIn":  stdIn,
 		"stdOut": stdOut,
-	}).Traceln("server.Server.printMotD")
+	}).Traceln("--> server.Server.printMotD")
 	if _, err := os.Stat("/etc/motd"); err == nil {
 		motd, err := ioutil.ReadFile("/etc/motd")
 		if err != nil {
-			log.WithField("error", err).Errorln("Couldn't read message of the day.")
+			log.WithError(err).Errorln("Couldn't read message of the day.")
 			return err
 		}
 		log.WithField("motd", string(motd)).Debugln("Read message of the day.")

@@ -13,7 +13,7 @@ import (
 )
 
 func FromFd(fd uintptr) (net.Conn, error) {
-	log.WithField("fd", fd).Traceln("connection.FromFd")
+	log.WithField("fd", fd).Traceln("--> connection.FromFd")
 	conn, err := net.FileConn(os.NewFile(fd, ""))
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -43,13 +43,13 @@ func (req UsernamePacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("connection.UsernamePacket.Ask")
+	}).Traceln("--> connection.UsernamePacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading user name.")
 	_, _ = os.Stdout.WriteString(req.Request)
 	bIn := bufio.NewReader(in)
 	str, err := bIn.ReadString('\n')
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't read user name.")
+		log.WithError(err).Errorln("Couldn't read user name.")
 		return err
 	}
 	username := strings.TrimSpace(str)
@@ -59,22 +59,22 @@ func (req UsernamePacket) Ask(in io.Reader, out io.Writer) error {
 }
 
 func (req UsernamePacket) String() string {
-	log.Traceln("connection.UsernamePacket.String")
+	log.Traceln("--> connection.UsernamePacket.String")
 	return "?U:" + req.Request + "\n"
 }
 
 func (req UsernamePacket) Done() bool {
-	log.Traceln("connection.UsernamePacket.Done")
+	log.Traceln("--> connection.UsernamePacket.Done")
 	return false
 }
 
 func (req UsernamePacket) Field() string {
-	log.Traceln("connection.UsernamePacket.Field")
+	log.Traceln("--> connection.UsernamePacket.Field")
 	return req.Request
 }
 
 func (req UsernamePacket) Error() error {
-	log.Traceln("connection.UsernamePacket.Field")
+	log.Traceln("--> connection.UsernamePacket.Field")
 	return nil
 }
 
@@ -88,11 +88,11 @@ func (req PasswordPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("connection.PasswordPacket.Ask")
+	}).Traceln("--> connection.PasswordPacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading password.")
 	str, err := speakeasy.Ask(req.Request)
 	if err != nil {
-		log.WithField("error", err).Errorln("Couldn't read password.")
+		log.WithError(err).Errorln("Couldn't read password.")
 		return err
 	}
 	password := strings.TrimSpace(str)
@@ -102,22 +102,22 @@ func (req PasswordPacket) Ask(in io.Reader, out io.Writer) error {
 }
 
 func (req PasswordPacket) String() string {
-	log.Traceln("connection.PasswordPacket.String")
+	log.Traceln("--> connection.PasswordPacket.String")
 	return "?P:" + req.Request + "\n"
 }
 
 func (req PasswordPacket) Done() bool {
-	log.Traceln("connection.PasswordPacket.Done")
+	log.Traceln("--> connection.PasswordPacket.Done")
 	return false
 }
 
 func (req PasswordPacket) Field() string {
-	log.Traceln("connection.PasswordPacket.Field")
+	log.Traceln("--> connection.PasswordPacket.Field")
 	return req.Request
 }
 
 func (req PasswordPacket) Error() error {
-	log.Traceln("connection.PasswordPacket.Field")
+	log.Traceln("--> connection.PasswordPacket.Field")
 	return nil
 }
 
@@ -129,29 +129,29 @@ func (req AuthSucceededPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("connection.AuthSucceededPacket.Ask")
+	}).Traceln("--> connection.AuthSucceededPacket.Ask")
 	err := errors.New("nothing to ask")
-	log.WithField("error", err).Errorln("Not implemented!")
+	log.WithError(err).Errorln("Not implemented!")
 	return err
 }
 
 func (req AuthSucceededPacket) String() string {
-	log.Traceln("connection.AuthSucceededPacket.String")
+	log.Traceln("--> connection.AuthSucceededPacket.String")
 	return "?S:\n"
 }
 
 func (req AuthSucceededPacket) Done() bool {
-	log.Traceln("connection.AuthSucceededPacket.Done")
+	log.Traceln("--> connection.AuthSucceededPacket.Done")
 	return true
 }
 
 func (req AuthSucceededPacket) Field() string {
-	log.Traceln("connection.AuthSucceededPacket.Field")
+	log.Traceln("--> connection.AuthSucceededPacket.Field")
 	return ""
 }
 
 func (req AuthSucceededPacket) Error() error {
-	log.Traceln("connection.AuthSucceededPacket.Field")
+	log.Traceln("--> connection.AuthSucceededPacket.Field")
 	return nil
 }
 
@@ -163,31 +163,31 @@ func (req TimeoutPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("connection.TimeoutPacket.Ask")
+	}).Traceln("--> connection.TimeoutPacket.Ask")
 	err := errors.New("nothing to ask")
-	log.WithField("error", err).Errorln("Not implemented!")
+	log.WithError(err).Errorln("Not implemented!")
 	return err
 }
 
 func (req TimeoutPacket) String() string {
-	log.Traceln("connection.TimeoutPacket.String")
+	log.Traceln("--> connection.TimeoutPacket.String")
 	return "?T:\n"
 }
 
 func (req TimeoutPacket) Done() bool {
-	log.Traceln("connection.TimeoutPacket.Done")
+	log.Traceln("--> connection.TimeoutPacket.Done")
 	return true
 }
 
 func (req TimeoutPacket) Field() string {
-	log.Traceln("connection.TimeoutPacket.Field")
+	log.Traceln("--> connection.TimeoutPacket.Field")
 	return ""
 }
 
 func (req TimeoutPacket) Error() error {
-	log.Traceln("connection.TimeoutPacket.Field")
+	log.Traceln("--> connection.TimeoutPacket.Field")
 	err := errors.New("timeout reached")
-	log.WithField("error", err).Errorln("Login failed because of timeout.")
+	log.WithError(err).Errorln("Login failed because of timeout.")
 	return err
 }
 
@@ -199,38 +199,38 @@ func (req MaxTriesExceededPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("connection.MaxTriesExceededPacket.Ask")
+	}).Traceln("--> connection.MaxTriesExceededPacket.Ask")
 	err := errors.New("nothing to ask")
-	log.WithField("error", err).Errorln("Not implemented!")
+	log.WithError(err).Errorln("Not implemented!")
 	return err
 }
 
 func (req MaxTriesExceededPacket) String() string {
-	log.Traceln("connection.MaxTriesExceededPacket.String")
+	log.Traceln("--> connection.MaxTriesExceededPacket.String")
 	return "?X:\n"
 }
 
 func (req MaxTriesExceededPacket) Done() bool {
-	log.Traceln("connection.MaxTriesExceededPacket.Done")
+	log.Traceln("--> connection.MaxTriesExceededPacket.Done")
 	return true
 }
 
 func (req MaxTriesExceededPacket) Field() string {
-	log.Traceln("connection.MaxTriesExceededPacket.Field")
+	log.Traceln("--> connection.MaxTriesExceededPacket.Field")
 	return ""
 }
 
 func (req MaxTriesExceededPacket) Error() error {
-	log.Traceln("connection.MaxTriesExceededPacket.Field")
+	log.Traceln("--> connection.MaxTriesExceededPacket.Field")
 	err := errors.New("maximum tries reached")
-	log.WithField("error", err).Errorln("Login failed because of maximum tries reached.")
+	log.WithError(err).Errorln("Login failed because of maximum tries reached.")
 	return err
 }
 
 // Parser:
 
 func Parse(str string) (Packet, error) {
-	log.WithField("str", str).Traceln("connection.Parse")
+	log.WithField("str", str).Traceln("--> connection.Parse")
 	if strings.HasPrefix(str, "?U:") {
 		str = str[3:]
 		return UsernamePacket{str}, nil

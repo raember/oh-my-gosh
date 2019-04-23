@@ -53,37 +53,37 @@ import (
 )
 
 func Listen(port int) (uintptr, error) {
-	log.WithField("port", port).Traceln("socket.Listen")
+	log.WithField("port", port).Traceln("--> socket.Listen")
 	retval, err := C.go_listen(C.int(port))
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed to setup listener.")
+		log.WithError(err).Errorln("Failed to setup listener.")
 		return 0, err
 	}
 	return uintptr(retval), nil
 }
 
 func Accept(socketFd uintptr) (uintptr, error) {
-	log.WithField("socketFd", socketFd).Traceln("socket.Accept")
+	log.WithField("socketFd", socketFd).Traceln("--> socket.Accept")
 	retval, err := C.go_accept(C.int(socketFd))
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed to accept connection.")
+		log.WithError(err).Errorln("Failed to accept connection.")
 		return 0, err
 	}
 	return uintptr(retval), nil
 }
 
 func GetPeerName(socketFd uintptr) (*net.TCPAddr, error) {
-	log.WithField("socketFd", socketFd).Traceln("socket.GetPeerName")
+	log.WithField("socketFd", socketFd).Traceln("--> socket.GetPeerName")
 	addr, err := C.go_getpeername(C.int(socketFd))
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed to get peer address.")
+		log.WithError(err).Errorln("Failed to get peer address.")
 		return nil, err
 	}
 	addrStr := C.GoString(C.inet_ntoa(addr.sin_addr))
 	port := int(addr.sin_port)
 	tcpAddr, err := net.ResolveTCPAddr(common.TCP, addrStr+":"+strconv.Itoa(port))
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed to parse address.")
+		log.WithError(err).Errorln("Failed to parse address.")
 		return nil, err
 	}
 	log.WithField("address", tcpAddr).Infoln("Got peer address.")

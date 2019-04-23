@@ -15,7 +15,7 @@ import (
 )
 
 func Fork() (int, error) {
-	log.Traceln("proc.Fork")
+	log.Traceln("--> proc.Fork")
 	pid := int(C.go_fork())
 	if pid == 0 { // Child
 		log.WithFields(log.Fields{
@@ -26,7 +26,7 @@ func Fork() (int, error) {
 		log.WithField("pid", pid).Debugln("Forked off child.")
 	} else {
 		err := errors.New("failed to fork")
-		log.WithField("error", err).Errorln("Failed to fork process.")
+		log.WithError(err).Errorln("Failed to fork process.")
 		return pid, err
 	}
 	return pid, nil

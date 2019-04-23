@@ -14,7 +14,7 @@ import (
 var configPath = flag.String("conf", common.CONFIGPATH, "Config path")
 
 func main() {
-	log.Traceln("gosh.main")
+	log.Traceln("--> gosh.main")
 	flag.Parse()
 	address := flag.Arg(0)
 	if address == "" {
@@ -45,7 +45,7 @@ func main() {
 		for {
 			n, err := bufIn.WriteTo(os.Stdout)
 			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read from connection.")
+				log.WithError(err).Errorln("Couldn't read from connection.")
 				break
 			}
 			if n > 0 {
@@ -58,7 +58,7 @@ func main() {
 		for {
 			n, err := bufIn.WriteTo(conn)
 			if err != nil {
-				log.WithField("error", err).Errorln("Couldn't read from stdin.")
+				log.WithError(err).Errorln("Couldn't read from stdin.")
 				break
 			}
 			if n > 0 {

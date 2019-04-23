@@ -12,12 +12,12 @@ func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer) error {
 		"shellpath": shellpath,
 		"stdIn":     stdIn,
 		"stdOut":    stdOut,
-	}).Traceln("shell.Execute")
+	}).Traceln("--> shell.Execute")
 	shell := exec.Command(shellpath, "--login")
 	// TODO: Make shell transmit everything over to client CORRECTLY.
 	pid, err := syscall.Setsid()
 	if err != nil {
-		log.WithField("error", err).Errorln("Failed setting sid.")
+		log.WithError(err).Errorln("Failed setting sid.")
 	} else {
 		log.WithField("pid", pid).Infoln("Set sid.")
 	}
@@ -26,7 +26,7 @@ func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer) error {
 	shell.Stderr = stdOut
 	err = shell.Run()
 	if err != nil {
-		log.WithField("error", err).Errorln("An error occured.")
+		log.WithError(err).Errorln("An error occured.")
 	}
 	log.Debugln("Shell terminated.")
 	return err

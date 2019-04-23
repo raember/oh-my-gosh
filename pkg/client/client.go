@@ -23,7 +23,7 @@ func NewClient(protocol string, address string, port int) (*Client, error) {
 		"protocol": protocol,
 		"address":  address,
 		"port":     port,
-	}).Traceln("client.NewClient")
+	}).Traceln("--> client.NewClient")
 	if port < 0 {
 		err := errors.New("connection cannot be negative")
 		log.WithFields(log.Fields{
@@ -61,7 +61,7 @@ func NewClient(protocol string, address string, port int) (*Client, error) {
 }
 
 func (client Client) Dial() (net.Conn, error) {
-	log.Traceln("client.Client.Dial")
+	log.Traceln("--> client.Client.Dial")
 	address := client.address
 	//tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	log.WithFields(log.Fields{
@@ -86,17 +86,17 @@ func PerformLogin(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("client.PerformLogin")
+	}).Traceln("--> client.PerformLogin")
 	bIn := bufio.NewReader(in)
 	for {
 		str, err := bIn.ReadString('\n')
 		if err != nil {
-			log.WithField("error", err).Errorln("Couldn't read from server.")
+			log.WithError(err).Errorln("Couldn't read from server.")
 			return err
 		}
 		pkg, err := connection.Parse(strings.TrimSpace(str))
 		if err != nil {
-			log.WithField("error", err).Errorln("Couldn't parse request.")
+			log.WithError(err).Errorln("Couldn't parse request.")
 			return err
 		}
 		if pkg.Done() {
@@ -104,7 +104,7 @@ func PerformLogin(in io.Reader, out io.Writer) error {
 		}
 		err = pkg.Ask(os.Stdin, out)
 		if err != nil {
-			log.WithField("error", err).Errorln("Couldn't perform request.")
+			log.WithError(err).Errorln("Couldn't perform request.")
 			return err
 		}
 	}
