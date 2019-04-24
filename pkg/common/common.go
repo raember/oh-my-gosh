@@ -25,7 +25,7 @@ const (
 func init() {
 	lvl, ok := os.LookupEnv("LOG_LEVEL")
 	if !ok {
-		lvl = "trace"
+		lvl = "info"
 	}
 	ll, err := log.ParseLevel(strings.ToLower(lvl))
 	if err != nil {

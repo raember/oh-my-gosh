@@ -2,32 +2,34 @@ package shell
 
 import (
 	log "github.com/sirupsen/logrus"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"io"
 	"os/exec"
 	"syscall"
 )
 
-func Execute(shellpath string, stdIn io.Reader, stdOut io.Writer) error {
+func Execute(passWd *pw.PassWd, in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"shellpath": shellpath,
-		"stdIn":     stdIn,
-		"stdOut":    stdOut,
+		"passWd": passWd,
+		"in":     in,
+		"out":    out,
 	}).Traceln("--> shell.Execute")
-	shell := exec.Command(shellpath, "--login")
-	// TODO: Make shell transmit everything over to client CORRECTLY.
-	pid, err := syscall.Setsid()
-	if err != nil {
-		log.WithError(err).Errorln("Failed setting sid.")
-	} else {
-		log.WithField("pid", pid).Infoln("Set sid.")
+	shell := exec.Command(passWd.Shell, "--login")
+	shell.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Uid: passWd.Uid,
+			Gid: passWd.Gid,
+		},
 	}
-	shell.Stdin = stdIn
-	shell.Stdout = stdOut
-	shell.Stderr = stdOut
-	err = shell.Run()
+	shell.Stdin = in
+	shell.Stdout = out
+	shell.Stderr = out
+	// TODO: Tidy up fragments in shell.
+	err := shell.Run()
 	if err != nil {
 		log.WithError(err).Errorln("An error occured.")
+	} else {
+		log.Debugln("Shell terminated.")
 	}
-	log.Debugln("Shell terminated.")
 	return err
 }

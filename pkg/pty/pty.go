@@ -22,7 +22,6 @@ import "C"
 import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"os"
 	"syscall"
 )
 
@@ -45,32 +44,32 @@ func (e *PtyError) Error() string {
 	return fmt.Sprintf("%s: %s", e.FuncName, e.ErrorString)
 }
 
-// Open returns a master pty and the name of the linked slave tty.
-func Open() (master *os.File, slave string, err error) {
-	log.Traceln("--> pty.Open")
+// Creates a master pty and the name of the linked slave pts.
+func Create() (masterFd uintptr, slave string, err error) {
+	log.Traceln("--> pty.Create")
 	m, err := C.posix_openpt(C.O_RDWR)
 	if err != nil {
 		err = ptyError("posix_openpt", err)
 		log.WithError(err).Errorln("Couldn't open pseudo-terminal.")
-		return nil, "", err
+		return 0, "", err
 	}
 	if _, err := C.grantpt(m); err != nil {
 		err = ptyError("grantpt", err)
 		log.WithError(err).Errorln("Couldn't grant pseudo-terminal perms.")
 		C.close(m)
-		return nil, "", err
+		return 0, "", err
 	}
 	if _, err := C.unlockpt(m); err != nil {
 		err = ptyError("unlockpt", err)
 		log.WithError(err).Errorln("Couldn't unlock pseudo-terminal.")
 		C.close(m)
-		return nil, "", err
+		return 0, "", err
 	}
 	slave = C.GoString(C.ptsname(m))
-	file := os.NewFile(uintptr(m), "pty-master")
+	masterFd = uintptr(m)
 	log.WithFields(log.Fields{
-		"slave": slave,
-		"file":  file.Name(),
+		"slave":    slave,
+		"masterFd": masterFd,
 	}).Infoln("Opened pseudo terminal.")
-	return file, slave, nil
+	return masterFd, slave, nil
 }

@@ -9,11 +9,9 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/shell"
 	"io"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -27,82 +25,62 @@ func NewServer(config *viper.Viper) Server {
 }
 
 // Serve a newly established connection.
-func (server Server) Serve(stdIn io.Reader, stdOut io.Writer) error {
+func (server Server) Serve(in io.Reader, out io.Writer) (*os.File, string, uint32, error) {
 	log.WithFields(log.Fields{
-		"stdIn":  stdIn,
-		"stdOut": stdOut,
+		"in":  in,
+		"out": out,
 	}).Traceln("--> server.Server.Serve")
-	user, err := server.PerformLogin(stdIn, stdOut)
+	user, err := server.PerformLogin("", in, out)
 	if err != nil {
-		return err
+		return nil, "", 0, err
 	}
 
-	err = server.checkForNologinFile(stdIn, stdOut)
+	err = server.checkForNologinFile(in, out)
 	if err != nil {
-		return err
+		return nil, "", 0, err
 	}
 
-	// TODO: Redirect traffic through pts to the pty
-	ptyFile, ptsName, err := pty.Open()
+	ptyFd, ptsName, err := pty.Create()
 	if err != nil {
-		return err
+		return nil, "", 0, err
 	}
-	defer func() {
-		if err = ptyFile.Close(); err != nil {
-			log.WithError(err).Errorln("Couldn't close pty file.")
-		} else {
-			log.Debugln("Closed pty file.")
-		}
-	}()
+	ptyFile := os.NewFile(ptyFd, "pty")
 
-	if err = server.printMotD(stdIn, stdOut); err != nil {
-		return err
+	if err = server.printMotD(in, out); err != nil {
+		return nil, "", 0, err
 	}
 
-	ptsFile, err := os.Create(ptsName)
-	if err != nil {
-		log.WithError(err).Errorln("Couldn't open pts file.")
-		return err
-	}
-	defer func() {
-		if err = ptsFile.Close(); err != nil {
-			log.WithError(err).Errorln("Couldn't close pts file.")
-		} else {
-			log.Debugln("Closed pts file.")
-		}
-	}()
-
-	// Forward client to pts(shell)
+	// Forward client to shell
 	go func() {
-		bufIn := bufio.NewReader(stdIn)
+		bufIn := bufio.NewReader(in)
 		for {
-			n, err := bufIn.WriteTo(ptsFile)
+			n, err := bufIn.WriteTo(ptyFile)
 			if err != nil {
 				log.WithError(err).Errorln("Couldn't read from client.")
 				break
 			}
 			if n > 0 {
-				log.Debugln("Written " + strconv.Itoa(int(n)) + " bytes to pts.")
+				log.WithField("n", n).Debugln("Wrote to pty.")
 			}
 		}
 	}()
 
-	// Forward pts(shell) output to client
+	// Forward shell output to client
 	go func() {
-		bufIn := bufio.NewReader(ptsFile)
+		bufIn := bufio.NewReader(ptyFile)
 		for {
-			n, err := bufIn.WriteTo(stdOut)
+			n, err := bufIn.WriteTo(out)
 			if err != nil {
-				log.WithError(err).Errorln("Couldn't read from pts.")
+				log.WithError(err).Errorln("Couldn't read from pty.")
 				break
 			}
 			if n > 0 {
-				log.Debugln("Read " + strconv.Itoa(int(n)) + " bytes from pts.")
+				log.WithField("n", n).Debugln("Wrote to client.")
 			}
 		}
 	}()
 
-	return shell.Execute(user.PassWd.Shell, ptyFile, ptyFile)
+	return ptyFile, ptsName, user.PassWd.Uid, nil
 }
 
 type LoginResult struct {
@@ -111,10 +89,11 @@ type LoginResult struct {
 }
 
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.User, error) {
+func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) (*login.User, error) {
 	log.WithFields(log.Fields{
-		"stdIn":  stdIn,
-		"stdOut": stdOut,
+		"userName": userName,
+		"in":       in,
+		"out":      out,
 	}).Traceln("--> server.Server.PerformLogin")
 	timeout := make(chan bool, 1)
 	loginChan := make(chan LoginResult)
@@ -135,7 +114,7 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.Use
 				"try":      try,
 				"maxTries": maxTries,
 			}).Debugln("Start authentication.")
-			user, err := login.Authenticate(stdIn, stdOut)
+			user, err := login.Authenticate(userName, in, out)
 			if err != nil {
 				switch err.(type) {
 				case *login.AuthError: // Auth error -> continue
@@ -143,7 +122,7 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.Use
 					if try >= maxTries {
 						err := errors.New("maximum try reached")
 						log.WithError(err).Errorln("User reached maximum try.")
-						_, _ = stdOut.Write([]byte(connection.MaxTriesExceededPacket{}.String()))
+						_, _ = out.Write([]byte(connection.MaxTriesExceededPacket{}.String()))
 						loginChan <- LoginResult{user, err}
 						return
 					}
@@ -166,15 +145,15 @@ func (server Server) PerformLogin(stdIn io.Reader, stdOut io.Writer) (*login.Use
 	case <-timeout:
 		err := errors.New("login timed out")
 		log.WithError(err).Errorln("Login grace time exceeded.")
-		_, _ = stdOut.Write([]byte(connection.TimeoutPacket{}.String()))
+		_, _ = out.Write([]byte(connection.TimeoutPacket{}.String()))
 		return nil, err
 	}
 }
 
-func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer) error {
+func (server Server) checkForNologinFile(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"stdIn":  stdIn,
-		"stdOut": stdOut,
+		"in":  in,
+		"out": out,
 	}).Traceln("--> server.Server.checkForNologinFile")
 	bytes, err := ioutil.ReadFile("/etc/nologin")
 	if err != nil {
@@ -183,14 +162,14 @@ func (server Server) checkForNologinFile(stdIn io.Reader, stdOut io.Writer) erro
 	}
 	err = errors.New("/etc/nologin file exists: no login allowed")
 	log.WithError(err).Errorln("/etc/nologin file exists. Login not permitted.")
-	_, _ = stdOut.Write(bytes)
+	_, _ = out.Write(bytes)
 	return err
 }
 
-func (server Server) printMotD(stdIn io.Reader, stdOut io.Writer) error {
+func (server Server) printMotD(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"stdIn":  stdIn,
-		"stdOut": stdOut,
+		"in":  in,
+		"out": out,
 	}).Traceln("--> server.Server.printMotD")
 	if _, err := os.Stat("/etc/motd"); err == nil {
 		motd, err := ioutil.ReadFile("/etc/motd")
@@ -199,7 +178,7 @@ func (server Server) printMotD(stdIn io.Reader, stdOut io.Writer) error {
 			return err
 		}
 		log.WithField("motd", string(motd)).Debugln("Read message of the day.")
-		_, _ = stdOut.Write(motd)
+		_, _ = out.Write(motd)
 	}
 	return nil
 }

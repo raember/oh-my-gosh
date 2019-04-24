@@ -11,7 +11,6 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -21,25 +20,26 @@ type User struct {
 	PassWd      *pw.PassWd
 }
 
-func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
+func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 	log.WithFields(log.Fields{
-		"stdIn":  stdIn,
-		"stdOut": stdOut,
+		"userName": userName,
+		"in":       in,
+		"out":      out,
 	}).Traceln("--> login.Authenticate")
 	if os.Getuid() != 0 {
-		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different user won't work.")
+		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different loggedInUser won't work.")
 	}
 
-	in := bufio.NewReader(stdIn)
-	out := bufio.NewWriter(stdOut)
-	user := &User{"", nil, nil}
-	transaction, err := pam.StartFunc("goshd", "", func(style pam.Style, message string) (string, error) {
+	bufIn := bufio.NewReader(in)
+	bufOut := bufio.NewWriter(out)
+	var loggedInUser User
+	transaction, err := pam.StartFunc(os.Args[0], userName, func(style pam.Style, message string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
 			log.WithField("message", message).Debugln("Reading password.")
-			_, _ = out.WriteString(connection.PasswordPacket{message}.String())
-			_ = out.Flush()
-			str, err := in.ReadString('\n')
+			_, _ = bufOut.WriteString(connection.PasswordPacket{message}.String())
+			_ = bufOut.Flush()
+			str, err := bufIn.ReadString('\n')
 			if err != nil {
 				log.WithError(err).Errorln("Couldn't read password.")
 				return "", err
@@ -48,17 +48,17 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 			log.WithField("password", str).Debugln("Read password.")
 			return str, nil
 		case pam.PromptEchoOn:
-			log.WithField("message", message).Debugln("Reading user name.")
-			_, _ = out.WriteString(connection.UsernamePacket{message}.String())
-			_ = out.Flush()
-			str, err := in.ReadString('\n')
+			log.WithField("message", message).Debugln("Reading loggedInUser name.")
+			_, _ = bufOut.WriteString(connection.UsernamePacket{message}.String())
+			_ = bufOut.Flush()
+			str, err := bufIn.ReadString('\n')
 			if err != nil {
-				log.WithError(err).Errorln("Couldn't read user name.")
+				log.WithError(err).Errorln("Couldn't read loggedInUser name.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
-			log.WithField("user", str).Debugln("Read user name.")
-			user.Name = str
+			log.WithField("loggedInUser", str).Debugln("Read loggedInUser name.")
+			loggedInUser.Name = str
 			return str, nil
 		case pam.ErrorMsg:
 			log.WithField("message", message).Errorln("An error occurred.")
@@ -71,108 +71,78 @@ func Authenticate(stdIn io.Reader, stdOut io.Writer) (*User, error) {
 	})
 	if err != nil {
 		log.WithError(err).Errorln("Couldn't start authentication.")
-		return user, err
+		return &loggedInUser, err
 	}
 
-	user.Transaction = transaction
+	loggedInUser.Transaction = transaction
 	err = transaction.Authenticate(0)
 	if err != nil {
-		authErr := &AuthError{Err: err.Error(), User: user.Name}
+		authErr := &AuthError{Err: err.Error(), User: loggedInUser.Name}
 		log.WithField("error", authErr.Error()).Errorln("Couldn't authenticate.")
-		return user, authErr
+		return &loggedInUser, authErr
 	}
 	log.Infoln("Authentication succeeded.")
-	_, _ = out.WriteString(connection.AuthSucceededPacket{}.String())
-	_ = out.Flush()
+	_, _ = bufOut.WriteString(connection.AuthSucceededPacket{}.String())
+	_ = bufOut.Flush()
 
 	// Print all the transaction commands:
-	err = user.Transaction.SetCred(pam.Silent)
+	err = loggedInUser.Transaction.AcctMgmt(pam.Silent)
 	if err != nil {
-		log.WithError(err).Errorln("Couldn't set credentials for the user.")
+		log.WithError(err).Errorln("Couldn't validate the loggedInUser.")
 	}
-	err = user.Transaction.AcctMgmt(pam.Silent)
-	if err != nil {
-		log.WithError(err).Errorln("Couldn't validate the user.")
-	}
-	err = user.Transaction.OpenSession(pam.Silent)
-	if err != nil {
-		log.WithError(err).Errorln("Couldn't open a session.")
-	}
-	defer func() {
-		err := user.Transaction.CloseSession(pam.Silent)
-		if err != nil {
-			log.WithError(err).Errorln("Couldn't close transaction session.")
-			return
-		}
-	}()
-	str, err := user.Transaction.GetItem(pam.Service)
+	service, err := loggedInUser.Transaction.GetItem(pam.Service)
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting Service from transaction.")
 	} else {
-		log.Infoln("Service: " + str)
+		log.WithField("service", service).Infoln("Got service from pam.")
 	}
-	str, err = user.Transaction.GetItem(pam.User)
+	username, err := loggedInUser.Transaction.GetItem(pam.User)
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting User from transaction.")
 	} else {
-		log.Infoln("User: " + str)
+		log.WithField("username", username).Infoln("Got username from pam.")
 	}
-	str, err = user.Transaction.GetItem(pam.Tty)
+	tty, err := loggedInUser.Transaction.GetItem(pam.Tty)
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting Tty from transaction.")
 	} else {
-		log.Infoln("Tty: " + str)
+		log.WithField("tty", tty).Infoln("Got tty from pam.")
 	}
-	str, err = user.Transaction.GetItem(pam.Rhost)
+	rhost, err := loggedInUser.Transaction.GetItem(pam.Rhost)
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting Rhost from transaction.")
 	} else {
-		log.Infoln("Rhost: " + str)
+		log.WithField("rhost", rhost).Infoln("Got rhost from pam.")
 	}
-	str, err = user.Transaction.GetItem(pam.Authtok)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Authtok from transaction.")
-	} else {
-		log.Infoln("Authtok: " + str)
-	}
-	str, err = user.Transaction.GetItem(pam.Oldauthtok)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Oldauthtok from transaction.")
-	} else {
-		log.Infoln("Oldauthtok: " + str)
-	}
-	str, err = user.Transaction.GetItem(pam.Ruser)
+	ruser, err := loggedInUser.Transaction.GetItem(pam.Ruser)
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting Ruser from transaction.")
 	} else {
-		log.Infoln("Ruser: " + str)
+		log.WithField("ruser", ruser).Infoln("Got ruser from pam.")
 	}
-	str, err = user.Transaction.GetItem(pam.UserPrompt)
+	userPrompt, err := loggedInUser.Transaction.GetItem(pam.UserPrompt)
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting UserPrompt from transaction.")
 	} else {
-		log.Infoln("UserPrompt: " + str)
+		log.WithField("userPrompt", userPrompt).Infoln("Got userPrompt from pam.")
 	}
-	strs, err := user.Transaction.GetEnvList()
+	envs, err := loggedInUser.Transaction.GetEnvList()
 	if err != nil {
 		log.WithError(err).Errorln("Failed getting Env from transaction.")
 	} else {
-		log.Println("#envs: " + strconv.Itoa(len(strs)))
-		for _, str := range strs {
-			log.Infoln(str + ": " + strs[str])
-		}
+		log.WithField("envs", envs).Infoln("Got env list from pam.")
 	}
 
-	passWd, err := pw.GetPwByName(user.Name)
+	passWd, err := pw.GetPwByName(username)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Errorln("Couldn't setup user.")
-		return user, err
+		}).Errorln("Couldn't setup loggedInUser.")
+		return &loggedInUser, err
 	}
-	user.PassWd = passWd
+	loggedInUser.PassWd = passWd
 
-	return user, nil
+	return &loggedInUser, nil
 }
 
 func (user User) String() string {
