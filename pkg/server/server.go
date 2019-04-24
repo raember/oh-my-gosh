@@ -98,44 +98,63 @@ func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) 
 	timeout := make(chan bool, 1)
 	loginChan := make(chan LoginResult)
 	go func() {
+		GOROUTINE := "timeout"
+		log.WithField("GoRoutine", GOROUTINE).Traceln("==> Go")
 		dur := time.Second * time.Duration(server.config.GetInt("Authentication.LoginGraceTime"))
-		log.WithField("duration", dur).Traceln("Go authentication timeout")
+		log.WithFields(log.Fields{
+			"GoRoutine": GOROUTINE,
+			"duration":  dur,
+		}).Debugln("Set timeout")
 		time.Sleep(dur)
 		timeout <- true
-		log.Traceln("End authentication timeout")
+		log.WithField("GoRoutine", GOROUTINE).Traceln("==> End")
 	}()
 	go func() {
-		log.Traceln("Go authentication try")
+		GOROUTINE := "authtry"
+		log.WithField("GoRoutine", GOROUTINE).Traceln("==> Go")
 		try := 0
 		maxTries := server.config.GetInt("Authentication.MaxTries")
+		log.WithFields(log.Fields{
+			"GoRoutine": GOROUTINE,
+			"maxTries":  maxTries,
+		}).Debugln("Set maximum tries")
 		for {
 			try++
 			log.WithFields(log.Fields{
-				"try":      try,
-				"maxTries": maxTries,
+				"GoRoutine": GOROUTINE,
+				"try":       try,
+				"maxTries":  maxTries,
 			}).Debugln("Start authentication.")
 			user, err := login.Authenticate(userName, in, out)
 			if err != nil {
 				switch err.(type) {
-				case *login.AuthError: // Auth error -> continue
-					log.WithField("username", user.Name).Errorln("User failed to authenticate himself.")
+				case *login.AuthError:
+					log.WithField("GoRoutine", GOROUTINE).WithError(err).Errorln("User failed to authenticate himself.")
+					if err.Error() == ": Authentication failure" { // General error
+						log.WithField("GoRoutine", GOROUTINE).Traceln("==> End")
+						return
+					}
 					if try >= maxTries {
 						err := errors.New("maximum try reached")
-						log.WithError(err).Errorln("User reached maximum try.")
+						log.WithField("GoRoutine", GOROUTINE).WithError(err).Errorln("User reached maximum try.")
 						_, _ = out.Write([]byte(connection.MaxTriesExceededPacket{}.String()))
 						loginChan <- LoginResult{user, err}
 						return
 					}
 					continue
 				case error: // i.E. connection error -> abort
-					log.WithError(err).Errorln("Failed to authenticate user.")
+					log.WithField("GoRoutine", GOROUTINE).WithError(err).Errorln("Failed to authenticate user.")
 					loginChan <- LoginResult{user, err}
+					log.WithField("GoRoutine", GOROUTINE).Traceln("==> End")
 					return
 				}
 			}
-			log.WithField("username", user.Name).Infoln("User successfully authenticated himself.")
+			log.WithFields(log.Fields{
+				"GoRoutine": GOROUTINE,
+				"username":  user.Name,
+			}).Infoln("User successfully authenticated himself.")
 			loginChan <- LoginResult{user, nil}
-			log.Traceln("End authentication try")
+			log.WithField("GoRoutine", GOROUTINE).Traceln("==> End")
 			return
 		}
 	}()

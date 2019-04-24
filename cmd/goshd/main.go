@@ -3,6 +3,7 @@ package main
 import "C"
 import (
 	"flag"
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
@@ -112,6 +113,9 @@ func listen(certFilename string, keyFilename string) {
 	}
 	err = server.WaitForConnections(socketFd, func(connFd uintptr) {
 		cmd := recursiveExec("--fd", strconv.FormatUint(uint64(connFd), 10))
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			log.WithError(err).Fatalln("Couldn't execute child")
 		}
@@ -132,6 +136,7 @@ func recursiveExec(additionalArgs ...string) *exec.Cmd {
 	}
 	args = append(args, additionalArgs...)
 	cmd := exec.Command(bin, args...)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String()))
 	return cmd
 }
 

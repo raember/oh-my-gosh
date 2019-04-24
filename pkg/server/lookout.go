@@ -111,11 +111,10 @@ func WaitForConnections(socketFd uintptr, handler func(uintptr)) error {
 			return err
 		}
 
-		addr, err := socket.GetPeerName(connFd)
+		_, err = socket.GetPeerName(connFd)
 		if err != nil {
 			return err
 		}
-		log.Infoln(addr.String())
 		log.WithField("connFd", connFd).Debugln("Handle connection")
 		go handler(connFd)
 	}

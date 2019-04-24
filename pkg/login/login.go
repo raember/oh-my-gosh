@@ -36,6 +36,7 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 	transaction, err := pam.StartFunc(os.Args[0], userName, func(style pam.Style, message string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
+			log.Traceln("PromptEchoOff")
 			log.WithField("message", message).Debugln("Reading password.")
 			_, _ = bufOut.WriteString(connection.PasswordPacket{message}.String())
 			_ = bufOut.Flush()
@@ -48,6 +49,7 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 			log.WithField("password", str).Debugln("Read password.")
 			return str, nil
 		case pam.PromptEchoOn:
+			log.Traceln("PromptEchoOn")
 			log.WithField("message", message).Debugln("Reading loggedInUser name.")
 			_, _ = bufOut.WriteString(connection.UsernamePacket{message}.String())
 			_ = bufOut.Flush()
@@ -61,13 +63,18 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 			loggedInUser.Name = str
 			return str, nil
 		case pam.ErrorMsg:
+			log.Traceln("ErrorMsg")
 			log.WithField("message", message).Errorln("An error occurred.")
 			return "", nil
 		case pam.TextInfo:
+			log.Traceln("ErrorMsg")
 			log.WithField("message", message).Debugln("Text received.")
 			return "", nil
+		default:
+			log.Traceln("default")
+			log.WithField("message", message).Errorln("Not supported message style.")
+			return "", errors.New("unrecognized message style")
 		}
-		return "", errors.New("unrecognized message style")
 	})
 	if err != nil {
 		log.WithError(err).Errorln("Couldn't start authentication.")

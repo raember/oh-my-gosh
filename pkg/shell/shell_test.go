@@ -1,17 +1,26 @@
 package shell
 
 import (
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"os"
 	"testing"
 )
 
 func TestExecute(t *testing.T) {
-	err := Execute("/usr/sbin/nologin", os.Stdin, os.Stdout)
+	pwd := &pw.PassWd{
+		Name:  "test",
+		Shell: "/usr/sbin/nologin",
+	}
+	err := Execute(pwd, os.Stdin, os.Stdout)
 	if err == nil {
 		t.Error("Could run nologin.")
 	}
 
-	err = Execute("/bin/bash", os.Stdin, os.Stdout)
+	pwd = &pw.PassWd{
+		Name:  "test",
+		Shell: "/bin/bash",
+	}
+	err = Execute(pwd, os.Stdin, os.Stdout)
 	if err != nil {
 		t.Error("Couldn't run bash.")
 	}

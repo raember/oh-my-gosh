@@ -8,7 +8,7 @@ import (
 func TestAuthenticate(t *testing.T) {
 	stdin := bytes.NewBufferString("test\nsecret\n")
 	stdout := bytes.NewBufferString("")
-	user, err := Authenticate(stdin, stdout)
+	user, err := Authenticate("", stdin, stdout)
 	if err != nil {
 		t.Error("Couldn't login: " + err.Error())
 		return
