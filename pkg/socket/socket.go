@@ -33,6 +33,7 @@ int go_accept(int socket) {
 	// int accept(int socket, struct sockaddr *restrict address, socklen_t *restrict address_len);
 	return accept(socket, (struct sockaddr*) NULL, NULL);
 }
+
 struct sockaddr_in go_getpeername(int socket) {
 	struct sockaddr address;
     socklen_t addressLength;
@@ -42,6 +43,12 @@ struct sockaddr_in go_getpeername(int socket) {
 	// int getpeername(int socket, struct sockaddr *restrict address, socklen_t *restrict address_len);
 	getpeername(socket, &address, &addressLength);
 	return *(struct sockaddr_in*)&address;
+}
+
+int go_shutdown(int socket) {
+	// https://linux.die.net/man/3/shutdown
+	// int shutdown(int socket, int how);
+	return shutdown(socket, SHUT_RDWR);
 }
 */
 import "C"
@@ -88,4 +95,13 @@ func GetPeerName(socketFd uintptr) (*net.TCPAddr, error) {
 	}
 	log.WithField("address", tcpAddr).Infoln("Got peer address.")
 	return tcpAddr, nil
+}
+
+func Shutdown(socketFd uintptr) error {
+	log.WithField("socketFd", socketFd).Traceln("--> socket.Shutdown")
+	_, err := C.go_shutdown(C.int(socketFd))
+	if err != nil {
+		log.WithError(err).Errorln("Failed to shutdown socket.")
+	}
+	return err
 }
