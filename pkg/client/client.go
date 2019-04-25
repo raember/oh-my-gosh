@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
@@ -63,13 +64,13 @@ func NewClient(protocol string, address string, port int) (*Client, error) {
 func (client Client) Dial() (net.Conn, error) {
 	log.Traceln("--> client.Client.Dial")
 	address := client.address
-	//tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	log.WithFields(log.Fields{
 		"scheme": address.Scheme,
 		"host":   address.Host,
 	}).Infoln("Dialing server.")
-	//conn, err := tls.Dial(address.Scheme, address.Host, tlsConfig)
-	conn, err := net.Dial(address.Scheme, address.Host)
+	tlsConfig := &tls.Config{InsecureSkipVerify: true}
+	conn, err := tls.Dial(address.Scheme, address.Host, tlsConfig)
+	//conn, err := net.Dial(address.Scheme, address.Host)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"protocol": address.Scheme,

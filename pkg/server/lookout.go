@@ -76,7 +76,7 @@ func (lookout Lookout) Listen(certpath string, keypath string) (uintptr, error) 
 	return socketFd, nil
 }
 
-func (lookout Lookout) loadCertKeyPair(certPath string, keyFilePath string) (tls.Certificate, error) {
+func LoadCertKeyPair(certPath string, keyFilePath string) (tls.Certificate, error) {
 	log.WithFields(log.Fields{
 		"certPath":    certPath,
 		"keyFilePath": keyFilePath,

@@ -2,6 +2,7 @@ package main
 
 import "C"
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	log "github.com/sirupsen/logrus"
@@ -58,8 +59,13 @@ func main() {
 					log.WithError(err).Errorln("Couldn't close connection.")
 				}
 			}()
-			in = conn
-			out = conn
+			cert, err := server.LoadCertKeyPair(*certFile, *keyFile)
+			if err != nil {
+				log.WithError(err).Fatalln("Couldn't load TLS certificate.")
+			}
+			tlsConn := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{cert}})
+			in = tlsConn
+			out = tlsConn
 		} else if *std && *fd == 0 && *file == "" {
 			log.Traceln("Read from standard pipes.")
 			in = os.Stdin
