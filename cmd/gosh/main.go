@@ -39,32 +39,34 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+	err = client.PerformEnvTransfer(conn, conn)
+	if err != nil {
+		os.Exit(1)
+	}
 
 	go func() {
 		bufIn := bufio.NewReader(conn)
-		for {
-			n, err := bufIn.WriteTo(os.Stdout)
-			if err != nil {
-				log.WithError(err).Errorln("Couldn't read from connection.")
-				break
-			}
-			if n > 0 {
-				log.Debugln("Read " + strconv.Itoa(int(n)) + " bytes from server.")
-			}
+		n, err := bufIn.WriteTo(os.Stdout)
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't read from connection.")
+			os.Exit(1)
 		}
+		if n > 0 {
+			log.Debugln("Read " + strconv.Itoa(int(n)) + " bytes from server.")
+		}
+		os.Exit(0)
 	}()
 	go func() {
 		bufIn := bufio.NewReader(os.Stdin)
-		for {
-			n, err := bufIn.WriteTo(conn)
-			if err != nil {
-				log.WithError(err).Errorln("Couldn't read from stdin.")
-				break
-			}
-			if n > 0 {
-				log.Debugln("Written " + strconv.Itoa(int(n)) + " bytes to server.")
-			}
+		n, err := bufIn.WriteTo(conn)
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't read from stdin.")
+			os.Exit(1)
 		}
+		if n > 0 {
+			log.Debugln("Written " + strconv.Itoa(int(n)) + " bytes to server.")
+		}
+		os.Exit(0)
 	}()
 	for {
 		time.Sleep(time.Second)

@@ -110,3 +110,35 @@ func PerformLogin(in io.Reader, out io.Writer) error {
 		}
 	}
 }
+
+func PerformEnvTransfer(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("--> client.PerformEnvTransfer")
+	bIn := bufio.NewReader(in)
+	for {
+		str, err := bIn.ReadString('\n')
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't read from server.")
+			return err
+		}
+		pkg, err := connection.Parse(strings.TrimSpace(str))
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't parse request.")
+			return err
+		}
+		if pkg.Done() {
+			return pkg.Error()
+		}
+		err = pkg.Ask(os.Stdin, out)
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't perform request.")
+			return err
+		}
+		// TODO: Remove dirty hack.
+		log.Debugln("Ignore the echo from the PTY.")
+		_, _ = bIn.ReadString('\n')
+		_, _ = bIn.ReadString('\n')
+	}
+}

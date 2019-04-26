@@ -74,7 +74,7 @@ func (req UsernamePacket) Field() string {
 }
 
 func (req UsernamePacket) Error() error {
-	log.Traceln("--> connection.UsernamePacket.Field")
+	log.Traceln("--> connection.UsernamePacket.Error")
 	return nil
 }
 
@@ -117,41 +117,41 @@ func (req PasswordPacket) Field() string {
 }
 
 func (req PasswordPacket) Error() error {
-	log.Traceln("--> connection.PasswordPacket.Field")
+	log.Traceln("--> connection.PasswordPacket.Error")
 	return nil
 }
 
-// =============== Authentication Succeeded Packet ===============
+// =============== Done Packet ===============
 
-type AuthSucceededPacket struct{}
+type DonePacket struct{}
 
-func (req AuthSucceededPacket) Ask(in io.Reader, out io.Writer) error {
+func (req DonePacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  in,
 		"out": out,
-	}).Traceln("--> connection.AuthSucceededPacket.Ask")
+	}).Traceln("--> connection.DonePacket.Ask")
 	err := errors.New("nothing to ask")
 	log.WithError(err).Errorln("Not implemented!")
 	return err
 }
 
-func (req AuthSucceededPacket) String() string {
-	log.Traceln("--> connection.AuthSucceededPacket.String")
-	return "?S:\n"
+func (req DonePacket) String() string {
+	log.Traceln("--> connection.DonePacket.String")
+	return "?D:\n"
 }
 
-func (req AuthSucceededPacket) Done() bool {
-	log.Traceln("--> connection.AuthSucceededPacket.Done")
+func (req DonePacket) Done() bool {
+	log.Traceln("--> connection.DonePacket.Done")
 	return true
 }
 
-func (req AuthSucceededPacket) Field() string {
-	log.Traceln("--> connection.AuthSucceededPacket.Field")
+func (req DonePacket) Field() string {
+	log.Traceln("--> connection.DonePacket.Field")
 	return ""
 }
 
-func (req AuthSucceededPacket) Error() error {
-	log.Traceln("--> connection.AuthSucceededPacket.Field")
+func (req DonePacket) Error() error {
+	log.Traceln("--> connection.DonePacket.Error")
 	return nil
 }
 
@@ -164,9 +164,8 @@ func (req TimeoutPacket) Ask(in io.Reader, out io.Writer) error {
 		"in":  in,
 		"out": out,
 	}).Traceln("--> connection.TimeoutPacket.Ask")
-	err := errors.New("nothing to ask")
-	log.WithError(err).Errorln("Not implemented!")
-	return err
+	os.Getenv(req.Field())
+	return nil
 }
 
 func (req TimeoutPacket) String() string {
@@ -185,7 +184,7 @@ func (req TimeoutPacket) Field() string {
 }
 
 func (req TimeoutPacket) Error() error {
-	log.Traceln("--> connection.TimeoutPacket.Field")
+	log.Traceln("--> connection.TimeoutPacket.Error")
 	err := errors.New("timeout reached")
 	log.WithError(err).Errorln("Login failed because of timeout.")
 	return err
@@ -221,10 +220,49 @@ func (req MaxTriesExceededPacket) Field() string {
 }
 
 func (req MaxTriesExceededPacket) Error() error {
-	log.Traceln("--> connection.MaxTriesExceededPacket.Field")
+	log.Traceln("--> connection.MaxTriesExceededPacket.Error")
 	err := errors.New("maximum tries reached")
 	log.WithError(err).Errorln("Login failed because of maximum tries reached.")
 	return err
+}
+
+// =============== Environment Variable Packet ===============
+
+type EnvPacket struct {
+	Request string
+}
+
+func (req EnvPacket) Ask(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  in,
+		"out": out,
+	}).Traceln("--> connection.EnvPacket.Ask")
+	log.WithField("msg", req.Request).Debugln("Reading environment variable.")
+
+	envvar := os.Getenv(req.Field())
+	log.WithField("envvar", envvar).Debugln("Read environment variable. Sending to server.")
+	_, err := fmt.Fprintln(out, envvar+"\n")
+	return err
+}
+
+func (req EnvPacket) String() string {
+	log.Traceln("--> connection.EnvPacket.String")
+	return "?E:" + req.Request + "\n"
+}
+
+func (req EnvPacket) Done() bool {
+	log.Traceln("--> connection.EnvPacket.Done")
+	return false
+}
+
+func (req EnvPacket) Field() string {
+	log.Traceln("--> connection.EnvPacket.Field")
+	return req.Request
+}
+
+func (req EnvPacket) Error() error {
+	log.Traceln("--> connection.EnvPacket.Error")
+	return nil
 }
 
 // Parser:
@@ -232,17 +270,17 @@ func (req MaxTriesExceededPacket) Error() error {
 func Parse(str string) (Packet, error) {
 	log.WithField("str", str).Traceln("--> connection.Parse")
 	if strings.HasPrefix(str, "?U:") {
-		str = str[3:]
-		return UsernamePacket{str}, nil
+		return UsernamePacket{str[3:]}, nil
 	} else if strings.HasPrefix(str, "?P:") {
-		str = str[3:]
-		return PasswordPacket{str}, nil
-	} else if str == "?S:" {
-		return AuthSucceededPacket{}, nil
+		return PasswordPacket{str[3:]}, nil
+	} else if str == "?D:" {
+		return DonePacket{}, nil
 	} else if str == "?T:" {
 		return TimeoutPacket{}, nil
 	} else if str == "?X:" {
 		return MaxTriesExceededPacket{}, nil
+	} else if strings.HasPrefix(str, "?E:") {
+		return EnvPacket{str[3:]}, nil
 	}
 	return nil, errors.New("couldn't parse packet")
 }

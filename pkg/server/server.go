@@ -53,31 +53,29 @@ func (server Server) Serve(in io.Reader, out io.Writer) (*os.File, string, uint3
 	// Forward client to shell
 	go func() {
 		bufIn := bufio.NewReader(in)
-		for {
-			n, err := bufIn.WriteTo(ptyFile)
-			if err != nil {
-				log.WithError(err).Errorln("Couldn't read from client.")
-				break
-			}
-			if n > 0 {
-				log.WithField("n", n).Debugln("Wrote to pty.")
-			}
+		n, err := bufIn.WriteTo(ptyFile)
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't read from client.")
+			os.Exit(1)
 		}
+		if n > 0 {
+			log.WithField("n", n).Debugln("Wrote to pty.")
+		}
+		os.Exit(0)
 	}()
 
 	// Forward shell output to client
 	go func() {
 		bufIn := bufio.NewReader(ptyFile)
-		for {
-			n, err := bufIn.WriteTo(out)
-			if err != nil {
-				log.WithError(err).Errorln("Couldn't read from pty.")
-				break
-			}
-			if n > 0 {
-				log.WithField("n", n).Debugln("Wrote to client.")
-			}
+		n, err := bufIn.WriteTo(out)
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't read from pty.")
+			os.Exit(1)
 		}
+		if n > 0 {
+			log.WithField("n", n).Debugln("Wrote to client.")
+		}
+		os.Exit(0)
 	}()
 
 	return ptyFile, ptsName, user.PassWd.Uid, nil

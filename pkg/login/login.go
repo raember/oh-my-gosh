@@ -89,7 +89,7 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 		return &loggedInUser, authErr
 	}
 	log.Infoln("Authentication succeeded.")
-	_, _ = bufOut.WriteString(connection.AuthSucceededPacket{}.String())
+	_, _ = bufOut.WriteString(connection.DonePacket{}.String())
 	_ = bufOut.Flush()
 
 	// Print all the transaction commands:

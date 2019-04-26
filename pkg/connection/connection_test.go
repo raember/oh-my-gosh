@@ -40,7 +40,7 @@ func TestParseAuthSucceededPacket(t *testing.T) {
 		t.Error(err)
 	}
 	switch pkg.(type) {
-	case AuthSucceededPacket:
+	case DonePacket:
 		if pkg.Field() != "" {
 			t.Fail()
 		}
