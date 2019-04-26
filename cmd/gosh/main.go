@@ -6,6 +6,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/client"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
+	"golang.org/x/crypto/ssh/terminal"
 	"os"
 	"strconv"
 	"time"
@@ -43,6 +44,12 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+	// TODO: Test
+	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		log.WithError(err).Errorln("Couldn't set terminal into raw mode.")
+		os.Exit(1)
+	}
 
 	go func() {
 		bufIn := bufio.NewReader(conn)
@@ -53,6 +60,11 @@ func main() {
 		}
 		if n > 0 {
 			log.Debugln("Read " + strconv.Itoa(int(n)) + " bytes from server.")
+		}
+		err = terminal.Restore(int(os.Stdin.Fd()), oldState)
+		if err != nil {
+			log.WithError(err).Errorln("Couldn't cook terminal.")
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}()

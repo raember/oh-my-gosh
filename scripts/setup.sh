@@ -8,4 +8,8 @@ for dep in $(grep -rPo "(?<=\")github\.com.*(?=\"$)" . | cut -d':' -f2 | sort | 
 done
 
 echo "Creating test user(test:secret)"
-sudo useradd test -d /tmp/test -p '$1$Qd8H95T5$RYSZQeoFbEB.gS19zS99A0' -s /bin/bash
+HOMEDIR='/tmp/test'
+sudo useradd test -d "$HOMEDIR" -p '$1$Qd8H95T5$RYSZQeoFbEB.gS19zS99A0' -s /bin/bash
+sudo mkdir -p "$HOMEDIR"
+sudo chown test "$HOMEDIR"
+sudo chmod 755 "$HOMEDIR"
