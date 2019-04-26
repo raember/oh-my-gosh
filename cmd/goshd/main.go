@@ -9,177 +9,104 @@ import (
 	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/shell"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/socket"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
 )
 
+var config *viper.Viper
 var certFile = flag.String("cert", common.CERTFILE, "Certificate file.")
 var keyFile = flag.String("key", common.KEYFILE, "Key file.")
 var configPath = flag.String("conf", common.CONFIGPATH, "LoadConfig path.")
-var fd = flag.Uint("fd", 0, "Handle connection using supplied fd. Conflicts with --std and --pty.")
-var std = flag.Bool("std", false, "Handle connection using standard pipes. Conflicts with --fd and --pty.")
-var file = flag.String("file", "", "Handle connection using pty. Conflicts with --fd and --std.")
-var uid = flag.Uint("uid", 0, "Start user session using the provided UID. Needs either --fd, --std or --pty.")
-var config *viper.Viper
 
+/*
+The goshd service has 2 possible control flows:
+1. Set up a listener and wait for incoming connections.
+2. Serve an individual connection.
+*/
 func main() {
 	log.WithField("args", os.Args).Traceln("--> goshd.main")
+
+	// I/O control:
+	fd := flag.Uint("fd", 0, "Use file descriptor. Conflicts with --std.")
+	std := flag.Bool("std", false, "Use standard I/O. Conflicts with --fd.")
+
 	flag.Parse()
-	log.WithField("certFile", *certFile).Debugln("Set certificate file")
-	log.WithField("keyFile", *keyFile).Debugln("Set key file")
-	log.WithField("configPath", *configPath).Debugln("Set configuration file path")
-	log.WithField("fd", *fd).Debugln("Set socket file descriptor")
-	log.WithField("std", *std).Debugln("Set standard pipes")
-	log.WithField("file", *file).Debugln("Set file name")
-	log.WithField("uid", *file).Debugln("Set user id")
+	log.WithFields(log.Fields{
+		"certFile":   *certFile,
+		"keyFile":    *keyFile,
+		"configPath": *configPath,
+		"fd":         *fd,
+		"std":        *std,
+	}).Debugln("Parsed arguments.")
 
 	config = server.LoadConfig(*configPath)
 
-	log.Traceln("Determine control flow")
-	if *fd != 0 || *std || *file != "" {
-
-		var in io.Reader
-		var out io.Writer
-
-		log.Traceln("Determine input and output pipes")
-		if *fd != 0 && !*std && *file == "" {
-			log.Traceln("Read from socket fd.")
+	if *fd != 0 || *std {
+		if *fd != 0 && !*std {
+			// Get the reader, writer and remote address from a file descriptor.
 			conn, err := connection.FromFd(uintptr(*fd))
 			if err != nil {
 				log.WithError(err).Fatalln("Couldn't get connection from fd.")
 			}
 			defer func() {
-				err = conn.Close()
-				if err != nil {
+				if err = conn.Close(); err != nil {
 					log.WithError(err).Errorln("Couldn't close connection.")
-				}
-			}()
-			cert, err := server.LoadCertKeyPair(*certFile, *keyFile)
-			if err != nil {
-				log.WithError(err).Fatalln("Couldn't load TLS certificate.")
-			}
-			tlsConn := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{cert}})
-			in = tlsConn
-			out = tlsConn
-		} else if *std && *fd == 0 && *file == "" {
-			log.Traceln("Read from standard pipes.")
-			in = os.Stdin
-			out = os.Stdout
-		} else if *file != "" && !*std && *fd == 0 {
-			log.Traceln("Read from pty.")
-			ptsFile, err := os.Create(*file)
-			if err != nil {
-				log.WithError(err).Fatalln("Couldn't open pts file.")
-			}
-			defer func() {
-				if err = ptsFile.Close(); err != nil {
-					log.WithError(err).Errorln("Couldn't close pts file.")
 				} else {
-					log.Debugln("Closed pts file.")
+					log.Debugln("Closed connection.")
 				}
 			}()
-			in = ptsFile
-			out = ptsFile
-		} else if *std && *fd != 0 {
+			tlsConn := tls.Server(conn, &tls.Config{
+				Certificates: []tls.Certificate{server.LoadCertKeyPair(*certFile, *keyFile)},
+			})
+			server.NewServer(config).Serve(tlsConn.RemoteAddr(), tlsConn, tlsConn)
+		} else if *std && *fd == 0 {
+			server.NewServer(config).Serve(fromStdIO())
+		} else {
 			log.Fatalln("Cannot have --fd and --std set at the same time!")
 		}
-
-		// Continue control flow
-		if *file != "" && *uid != 0 {
-			hostUser(uint32(*uid), in, out)
-		} else {
-			serveConnection(in, out)
-		}
 	} else {
-		listen(*certFile, *keyFile)
+		listen()
 	}
 }
 
-func listen(certFilename string, keyFilename string) {
-	log.WithFields(log.Fields{
-		"certFilename": certFilename,
-		"keyFilename":  keyFilename,
-	}).Traceln("--> main.listen")
-	lookout, err := server.NewLookout(
-		config.GetString("Server.Protocol"),
-		config.GetInt("Server.Port"),
-	)
+// Get the reader, writer and remote address from the standard I/O.
+func fromStdIO() (net.Addr, io.Reader, io.Writer) {
+	log.Traceln("--> fromStdIO")
+	mockAddr, err := net.ResolveTCPAddr(common.TCP, fmt.Sprintf("%s:%d", common.LOCALHOST, 0))
 	if err != nil {
-		log.WithError(err).Fatalln("Couldn't set up lookout.")
+		log.WithError(err).Fatalln("Couldn't create address mock.")
 	}
+	return mockAddr, os.Stdin, os.Stdout
+}
 
-	socketFd, err := lookout.Listen(certFilename, keyFilename)
-	if err != nil {
-		os.Exit(1)
-	}
-	err = server.WaitForConnections(socketFd, func(connFd uintptr) {
-		cmd := recursiveExec("--fd", strconv.FormatUint(uint64(connFd), 10))
+// Listen for incoming connections and recurse for every new connection.
+func listen() {
+	log.Traceln("--> main.listen")
+	fdChan := make(chan uintptr)
+	defer close(fdChan)
+	go server.WaitForConnections(socket.Listen(common.PORT), fdChan)
+	for fd := range fdChan {
+		bin := os.Args[0]
+		args := []string{
+			"--cert", *certFile,
+			"--key", *keyFile,
+			"--conf", *configPath,
+			"--fd", strconv.FormatUint(uint64(fd), 10),
+		}
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(cmd.Env, fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String()))
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			log.WithError(err).Fatalln("Couldn't execute child")
 		}
-	})
-	if err != nil {
-		os.Exit(1)
-	}
-	os.Exit(0)
-}
-
-func recursiveExec(additionalArgs ...string) *exec.Cmd {
-	log.WithField("additionalArgs", additionalArgs).Traceln("--> main.recursiveExec")
-	bin := os.Args[0]
-	args := []string{
-		"--cert", *certFile,
-		"--key", *keyFile,
-		"--conf", *configPath,
-	}
-	args = append(args, additionalArgs...)
-	cmd := exec.Command(bin, args...)
-	cmd.Env = append(cmd.Env, fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String()))
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd
-}
-
-func hostUser(uid uint32, in io.Reader, out io.Writer) {
-	log.WithFields(log.Fields{
-		"uid": uid,
-		"in":  in,
-		"out": out,
-	}).Traceln("--> main.hostUser")
-	pwd, err := pw.GetPwByUid(uid)
-	if err != nil {
-		log.WithError(err).Fatalln("Couldn't create new file.")
-	}
-	if err = shell.Execute(pwd, in, out); err != nil {
-		log.WithError(err).Fatalln("Shell returned an error.")
-	}
-}
-
-func serveConnection(in io.Reader, out io.Writer) {
-	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
-	}).Traceln("--> main.serveConnection")
-	ptyFile, ptsName, uid, err := server.NewServer(config).Serve(in, out)
-	if err != nil {
-		log.WithError(err).Fatalln("Failed serving connection.")
-	}
-	defer func() {
-		if err = ptyFile.Close(); err != nil {
-			log.WithError(err).Errorln("Couldn't close pty file.")
-		} else {
-			log.Debugln("Closed pty file.")
-		}
-	}()
-	cmd := recursiveExec("--uid", strconv.FormatUint(uint64(uid), 10), "--file", ptsName)
-	if err := cmd.Run(); err != nil {
-		log.WithError(err).Fatalln("Couldn't execute child")
+		log.WithField("cmd", cmd).Infoln("Started child.")
 	}
 }
 

@@ -41,8 +41,8 @@ type UsernamePacket struct {
 
 func (req UsernamePacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> connection.UsernamePacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading user name.")
 	_, _ = os.Stdout.WriteString(req.Request)
@@ -86,8 +86,8 @@ type PasswordPacket struct {
 
 func (req PasswordPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> connection.PasswordPacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading password.")
 	str, err := speakeasy.Ask(req.Request)
@@ -127,8 +127,8 @@ type DonePacket struct{}
 
 func (req DonePacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> connection.DonePacket.Ask")
 	err := errors.New("nothing to ask")
 	log.WithError(err).Errorln("Not implemented!")
@@ -161,8 +161,8 @@ type TimeoutPacket struct{}
 
 func (req TimeoutPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> connection.TimeoutPacket.Ask")
 	os.Getenv(req.Field())
 	return nil
@@ -196,8 +196,8 @@ type MaxTriesExceededPacket struct{}
 
 func (req MaxTriesExceededPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> connection.MaxTriesExceededPacket.Ask")
 	err := errors.New("nothing to ask")
 	log.WithError(err).Errorln("Not implemented!")
@@ -234,8 +234,8 @@ type EnvPacket struct {
 
 func (req EnvPacket) Ask(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> connection.EnvPacket.Ask")
 	log.WithField("msg", req.Request).Debugln("Reading environment variable.")
 
@@ -283,4 +283,24 @@ func Parse(str string) (Packet, error) {
 		return EnvPacket{str[3:]}, nil
 	}
 	return nil, errors.New("couldn't parse packet")
+}
+
+func Forward(in io.Reader, out io.Writer, inStr string, outStr string) {
+	GOROUTINE := fmt.Sprintf("%s->%s", inStr, outStr)
+	log.WithFields(log.Fields{
+		"GoRoutine": GOROUTINE,
+		"&in":       &in,
+		"&out":      &out,
+		"inStr":     inStr,
+		"outStr":    outStr,
+	}).Traceln("==> Go server.Forward")
+	n, err := bufio.NewReader(in).WriteTo(out)
+	if err != nil {
+		log.WithError(err).WithField("GoRoutine", GOROUTINE).Errorln(fmt.Sprintf("Couldn't write from %s to %s.", inStr, outStr))
+		return
+	}
+	log.WithFields(log.Fields{
+		"GoRoutine": GOROUTINE,
+		"n":         n,
+	}).Debugln(fmt.Sprintf("Wrote from %s to %s.", inStr, outStr))
 }

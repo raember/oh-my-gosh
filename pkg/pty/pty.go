@@ -45,31 +45,28 @@ func (e *PtyError) Error() string {
 }
 
 // Creates a master pty and the name of the linked slave pts.
-func Create() (masterFd uintptr, slave string, err error) {
+func Create() (uintptr, string) {
 	log.Traceln("--> pty.Create")
-	m, err := C.posix_openpt(C.O_RDWR)
+	ptyFdC, err := C.posix_openpt(C.O_RDWR)
 	if err != nil {
 		err = ptyError("posix_openpt", err)
-		log.WithError(err).Errorln("Couldn't open pseudo-terminal.")
-		return 0, "", err
+		log.WithError(err).Fatalln("Couldn't open pseudo-terminal.")
 	}
-	if _, err := C.grantpt(m); err != nil {
+	if _, err := C.grantpt(ptyFdC); err != nil {
 		err = ptyError("grantpt", err)
-		log.WithError(err).Errorln("Couldn't grant pseudo-terminal perms.")
-		C.close(m)
-		return 0, "", err
+		C.close(ptyFdC)
+		log.WithError(err).Fatalln("Couldn't grant pseudo-terminal perms.")
 	}
-	if _, err := C.unlockpt(m); err != nil {
+	if _, err := C.unlockpt(ptyFdC); err != nil {
 		err = ptyError("unlockpt", err)
-		log.WithError(err).Errorln("Couldn't unlock pseudo-terminal.")
-		C.close(m)
-		return 0, "", err
+		C.close(ptyFdC)
+		log.WithError(err).Fatalln("Couldn't unlock pseudo-terminal.")
 	}
-	slave = C.GoString(C.ptsname(m))
-	masterFd = uintptr(m)
+	ptyFd := uintptr(ptyFdC)
+	ptsName := C.GoString(C.ptsname(ptyFdC))
 	log.WithFields(log.Fields{
-		"slave":    slave,
-		"masterFd": masterFd,
+		"ptsName": ptsName,
+		"ptyFd":   ptyFd,
 	}).Infoln("Opened pseudo terminal.")
-	return masterFd, slave, nil
+	return ptyFd, ptsName
 }

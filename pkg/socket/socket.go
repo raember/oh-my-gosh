@@ -53,48 +53,48 @@ int go_shutdown(int socket) {
 */
 import "C"
 import (
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"net"
-	"strconv"
 )
 
-func Listen(port int) (uintptr, error) {
+func Listen(port int) uintptr {
 	log.WithField("port", port).Traceln("--> socket.Listen")
-	retval, err := C.go_listen(C.int(port))
+	listenerFd, err := C.go_listen(C.int(port))
 	if err != nil {
-		log.WithError(err).Errorln("Failed to setup listener.")
-		return 0, err
+		log.WithError(err).Fatalln("Failed to setup listener.")
 	}
-	return uintptr(retval), nil
+	log.WithField("listenerFd", listenerFd).Debugln("Setup Listener.")
+	return uintptr(listenerFd)
 }
 
-func Accept(socketFd uintptr) (uintptr, error) {
-	log.WithField("socketFd", socketFd).Traceln("--> socket.Accept")
-	retval, err := C.go_accept(C.int(socketFd))
+func Accept(listenerFd uintptr) (uintptr, error) {
+	log.WithField("listenerFd", listenerFd).Traceln("--> socket.Accept")
+	socketFd, err := C.go_accept(C.int(listenerFd))
 	if err != nil {
 		log.WithError(err).Errorln("Failed to accept connection.")
 		return 0, err
 	}
-	return uintptr(retval), nil
+	log.WithField("socketFd", socketFd).Debugln("Accepted connection.")
+	return uintptr(socketFd), nil
 }
 
-func GetPeerName(socketFd uintptr) (*net.TCPAddr, error) {
+func GetPeerName(socketFd uintptr) *net.TCPAddr {
 	log.WithField("socketFd", socketFd).Traceln("--> socket.GetPeerName")
+	ERROR_MSG := "Failed to get peer address."
 	addr, err := C.go_getpeername(C.int(socketFd))
 	if err != nil {
-		log.WithError(err).Errorln("Failed to get peer address.")
-		return nil, err
+		log.WithError(err).Fatalln(ERROR_MSG)
 	}
 	addrStr := C.GoString(C.inet_ntoa(addr.sin_addr))
 	port := int(addr.sin_port)
-	tcpAddr, err := net.ResolveTCPAddr(common.TCP, addrStr+":"+strconv.Itoa(port))
+	tcpAddr, err := net.ResolveTCPAddr(common.TCP, fmt.Sprintf("%s:%d", addrStr, port))
 	if err != nil {
-		log.WithError(err).Errorln("Failed to parse address.")
-		return nil, err
+		log.WithError(err).Fatalln(ERROR_MSG)
 	}
 	log.WithField("address", tcpAddr).Infoln("Got peer address.")
-	return tcpAddr, nil
+	return tcpAddr
 }
 
 func Shutdown(socketFd uintptr) error {

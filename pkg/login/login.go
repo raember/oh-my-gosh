@@ -7,7 +7,6 @@ import (
 	"github.com/msteinert/pam"
 	log "github.com/sirupsen/logrus"
 	_ "github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"io"
 	"os"
@@ -23,23 +22,22 @@ type User struct {
 func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 	log.WithFields(log.Fields{
 		"userName": userName,
-		"in":       in,
-		"out":      out,
+		"in":       &in,
+		"out":      &out,
 	}).Traceln("--> login.Authenticate")
 	if os.Getuid() != 0 {
 		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different loggedInUser won't work.")
 	}
 
 	bufIn := bufio.NewReader(in)
-	bufOut := bufio.NewWriter(out)
+	//bufOut := bufio.NewWriter(out)
 	var loggedInUser User
 	transaction, err := pam.StartFunc(os.Args[0], userName, func(style pam.Style, message string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
 			log.Traceln("PromptEchoOff")
 			log.WithField("message", message).Debugln("Reading password.")
-			_, _ = bufOut.WriteString(connection.PasswordPacket{message}.String())
-			_ = bufOut.Flush()
+			_, _ = fmt.Fprint(out, message)
 			str, err := bufIn.ReadString('\n')
 			if err != nil {
 				log.WithError(err).Errorln("Couldn't read password.")
@@ -51,8 +49,7 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 		case pam.PromptEchoOn:
 			log.Traceln("PromptEchoOn")
 			log.WithField("message", message).Debugln("Reading loggedInUser name.")
-			_, _ = bufOut.WriteString(connection.UsernamePacket{message}.String())
-			_ = bufOut.Flush()
+			_, _ = fmt.Fprint(out, message)
 			str, err := bufIn.ReadString('\n')
 			if err != nil {
 				log.WithError(err).Errorln("Couldn't read loggedInUser name.")
@@ -90,8 +87,8 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 		return &loggedInUser, authErr
 	}
 	log.Infoln("Authentication succeeded.")
-	_, _ = bufOut.WriteString(connection.DonePacket{}.String())
-	_ = bufOut.Flush()
+	//_, _ = bufOut.WriteString(connection.DonePacket{}.String())
+	//_ = bufOut.Flush()
 
 	// Print all the transaction commands:
 	err = loggedInUser.Transaction.AcctMgmt(pam.Silent)

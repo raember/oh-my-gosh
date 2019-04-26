@@ -1,16 +1,21 @@
 package server
 
 import (
-	"bufio"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	_ "github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/shell"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/socket"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"time"
 )
@@ -25,60 +30,50 @@ func NewServer(config *viper.Viper) Server {
 }
 
 // Serve a newly established connection.
-func (server Server) Serve(in io.Reader, out io.Writer) (*os.File, string, uint32, error) {
+func (server Server) Serve(addr net.Addr, in io.Reader, out io.Writer) {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"addr": addr,
+		"in":   &in,
+		"out":  &out,
 	}).Traceln("--> server.Server.Serve")
-	user, err := server.PerformLogin("", in, out)
+	//_, _ = server.PerformLogin("", in, out)
+
+	ptmFd, ptsName := pty.Create()
+	ptmFile := os.NewFile(ptmFd, "ptm")
+	defer closeFile(ptmFile, "ptm")
+	go connection.Forward(in, ptmFile, "client", "ptm")
+	go connection.Forward(ptmFile, out, "ptm", "client")
+	ptsFile, err := os.Create(ptsName)
 	if err != nil {
-		return nil, "", 0, err
+		log.WithError(err).Fatalln("Couldn't open pts file.")
 	}
+	defer closeFile(ptsFile, "pts")
 
-	err = server.checkForNologinFile(in, out)
+	user := server.PerformLogin("", ptsFile, ptsFile)
+
+	server.checkForNologinFile(ptsFile, ptsFile)
+
+	server.printMotD(ptsFile, ptsFile)
+
+	pwd, err := pw.GetPwByUid(user.PassWd.Uid)
 	if err != nil {
-		return nil, "", 0, err
+		log.WithError(err).Fatalln("Couldn't create new file.")
 	}
-
-	ptyFd, ptsName, err := pty.Create()
-	if err != nil {
-		return nil, "", 0, err
+	if err = shell.Execute(pwd, ptsFile, ptsFile); err != nil {
+		log.WithError(err).Fatalln("Shell returned an error.")
 	}
-	ptyFile := os.NewFile(ptyFd, "pty")
+}
 
-	if err = server.printMotD(in, out); err != nil {
-		return nil, "", 0, err
+func closeFile(file *os.File, fileStr string) {
+	log.WithFields(log.Fields{
+		"file":    file,
+		"fileStr": fileStr,
+	}).Traceln("--> server.closeFile")
+	if err := file.Close(); err != nil {
+		log.WithError(err).Errorln(fmt.Sprintf("Couldn't close %s file.", fileStr))
+	} else {
+		log.Debugln(fmt.Sprintf("Closed %s file.", fileStr))
 	}
-
-	// Forward client to shell
-	go func() {
-		bufIn := bufio.NewReader(in)
-		n, err := bufIn.WriteTo(ptyFile)
-		if err != nil {
-			log.WithError(err).Errorln("Couldn't read from client.")
-			os.Exit(1)
-		}
-		if n > 0 {
-			log.WithField("n", n).Debugln("Wrote to pty.")
-		}
-		os.Exit(0)
-	}()
-
-	// Forward shell output to client
-	go func() {
-		bufIn := bufio.NewReader(ptyFile)
-		n, err := bufIn.WriteTo(out)
-		if err != nil {
-			log.WithError(err).Errorln("Couldn't read from pty.")
-			os.Exit(1)
-		}
-		if n > 0 {
-			log.WithField("n", n).Debugln("Wrote to client.")
-		}
-		os.Exit(0)
-	}()
-
-	return ptyFile, ptsName, user.PassWd.Uid, nil
 }
 
 type LoginResult struct {
@@ -87,11 +82,11 @@ type LoginResult struct {
 }
 
 // Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) (*login.User, error) {
+func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) *login.User {
 	log.WithFields(log.Fields{
 		"userName": userName,
-		"in":       in,
-		"out":      out,
+		"in":       &in,
+		"out":      &out,
 	}).Traceln("--> server.Server.PerformLogin")
 	timeout := make(chan bool, 1)
 	loginChan := make(chan LoginResult)
@@ -135,7 +130,7 @@ func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) 
 					if try >= maxTries {
 						err := errors.New("maximum try reached")
 						log.WithField("GoRoutine", GOROUTINE).WithError(err).Errorln("User reached maximum try.")
-						_, _ = out.Write([]byte(connection.MaxTriesExceededPacket{}.String()))
+						_, _ = fmt.Fprint(out, err.Error()+"\n")
 						loginChan <- LoginResult{user, err}
 						return
 					}
@@ -158,44 +153,74 @@ func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) 
 	}()
 	select {
 	case res := <-loginChan:
-		return res.user, res.error
+		return res.user
 	case <-timeout:
 		err := errors.New("login timed out")
-		log.WithError(err).Errorln("Login grace time exceeded.")
-		_, _ = out.Write([]byte(connection.TimeoutPacket{}.String()))
-		return nil, err
+		_, _ = fmt.Fprint(out, err.Error()+"\n")
+		log.WithError(err).Fatalln("Login grace time exceeded.")
 	}
+	return nil
 }
 
-func (server Server) checkForNologinFile(in io.Reader, out io.Writer) error {
+func (server Server) checkForNologinFile(in io.Reader, out io.Writer) {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> server.Server.checkForNologinFile")
 	bytes, err := ioutil.ReadFile("/etc/nologin")
 	if err != nil {
 		log.Debugln("/etc/nologin file not found. Login permitted.")
-		return nil
+		return
 	}
 	err = errors.New("/etc/nologin file exists: no login allowed")
-	log.WithError(err).Errorln("/etc/nologin file exists. Login not permitted.")
 	_, _ = out.Write(bytes)
-	return err
+	log.WithError(err).Fatalln("/etc/nologin file exists. Login not permitted.")
 }
 
-func (server Server) printMotD(in io.Reader, out io.Writer) error {
+func (server Server) printMotD(in io.Reader, out io.Writer) {
 	log.WithFields(log.Fields{
-		"in":  in,
-		"out": out,
+		"in":  &in,
+		"out": &out,
 	}).Traceln("--> server.Server.printMotD")
 	if _, err := os.Stat("/etc/motd"); err == nil {
 		motd, err := ioutil.ReadFile("/etc/motd")
 		if err != nil {
-			log.WithError(err).Errorln("Couldn't read message of the day.")
-			return err
+			log.WithError(err).Fatalln("Couldn't read message of the day.")
 		}
 		log.WithField("motd", string(motd)).Debugln("Read message of the day.")
 		_, _ = out.Write(motd)
 	}
-	return nil
+}
+func LoadCertKeyPair(certPath string, keyFilePath string) tls.Certificate {
+	log.WithFields(log.Fields{
+		"certPath":    certPath,
+		"keyFilePath": keyFilePath,
+	}).Traceln("--> server.Lookout.loadCertKeyPair")
+	cert, err := tls.LoadX509KeyPair(certPath, keyFilePath)
+	if err != nil {
+		log.WithError(err).Fatalln("Couldn't load certificate key pair.")
+	}
+	log.WithFields(log.Fields{
+		"certPath":    certPath,
+		"keyFilePath": keyFilePath,
+	}).Debugln("Loaded certificate key pair.")
+	return cert
+}
+
+func WaitForConnections(listenerFd uintptr, fdChan chan uintptr) {
+	log.WithFields(log.Fields{
+		"listenerFd": listenerFd,
+		"fdChan":     fdChan,
+	}).Traceln("--> server.WaitForConnections")
+	for {
+		socketFd, err := socket.Accept(listenerFd)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+			}).Errorln("Failed opening connection.")
+		} else {
+			log.WithField("socketFd", socketFd).Debugln("Handle connection.")
+			fdChan <- socketFd
+		}
+	}
 }
