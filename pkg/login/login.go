@@ -81,9 +81,10 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 		return &loggedInUser, err
 	}
 
-	loggedInUser.Transaction = transaction
+	loggedInUser.Transaction = setupTransaction(transaction)
 	err = transaction.Authenticate(0)
 	if err != nil {
+		log.WithField("status", transaction.Error()).Errorln("Err")
 		authErr := &AuthError{Err: err.Error(), User: loggedInUser.Name}
 		log.WithField("error", authErr.Error()).Errorln("Couldn't authenticate.")
 		return &loggedInUser, authErr
@@ -165,4 +166,9 @@ type AuthError struct {
 func (e *AuthError) Error() string {
 	log.Traceln("--> login.AuthError.Error")
 	return fmt.Sprintf("%s: %s", e.User, e.Err)
+}
+
+func setupTransaction(transaction *pam.Transaction) *pam.Transaction {
+	// TODO: Get information about the peer
+	return transaction
 }
