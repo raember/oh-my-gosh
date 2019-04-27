@@ -51,8 +51,8 @@ func convertToPasswd(cpasswd *C.struct_passwd) (*PassWd, error) {
 	log.WithField("cpasswd", cpasswd).Traceln("--> pw.convertToPasswd")
 	if cpasswd == nil {
 		err := errors.New("got null pointer instead of *C.struct_passwd")
-		log.WithError(err).Warnln("Lookup failed.")
-		return &PassWd{}, err
+		log.WithError(err).Errorln("Lookup failed.")
+		return nil, err
 	}
 	passWd := &PassWd{
 		Name:     C.GoString(cpasswd.pw_name),
@@ -64,11 +64,13 @@ func convertToPasswd(cpasswd *C.struct_passwd) (*PassWd, error) {
 		Shell:    C.GoString(cpasswd.pw_shell),
 	}
 	log.WithFields(log.Fields{
-		"USER":  passWd.Name,
-		"UID":   passWd.Uid,
-		"GID":   passWd.Gid,
-		"HOME":  passWd.HomeDir,
-		"SHELL": passWd.Shell,
-	}).Println("Looked up user.")
+		"name":     passWd.Name,
+		"password": passWd.Password,
+		"uid":      passWd.Uid,
+		"gid":      passWd.Gid,
+		"gecos":    passWd.Gecos,
+		"homeDir":  passWd.HomeDir,
+		"shell":    passWd.Shell,
+	}).Debugln("Looked up user.")
 	return passWd, nil
 }

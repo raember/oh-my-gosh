@@ -101,16 +101,16 @@ func PerformEnvTransfer(in io.Reader, out io.Writer) error {
 			return err
 		}
 		if pkg.Done() {
-			return pkg.Error()
+			return nil
 		}
 		err = pkg.Ask(os.Stdin, out)
 		if err != nil {
 			log.WithError(err).Errorln("Couldn't perform request.")
 			return err
 		}
-		// TODO: Remove dirty hack.
-		log.Debugln("Ignore the echo from the PTY.")
-		_, _ = bIn.ReadString('\n')
-		_, _ = bIn.ReadString('\n')
+		//// TODO: Remove dirty hack.
+		//log.Debugln("Ignore the echo from the PTY.")
+		//_, _ = bIn.ReadString('\n')
+		//_, _ = bIn.ReadString('\n')
 	}
 }

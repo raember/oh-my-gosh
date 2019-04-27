@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -10,13 +11,14 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/login"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/shell"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/socket"
 	"io"
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -30,50 +32,92 @@ func NewServer(config *viper.Viper) Server {
 }
 
 // Serve a newly established connection.
-func (server Server) Serve(addr net.Addr, in io.Reader, out io.Writer) {
+func (server Server) Serve(addr net.Addr, in io.Reader, out io.Writer, conn *net.Conn) {
 	log.WithFields(log.Fields{
 		"addr": addr,
 		"in":   &in,
 		"out":  &out,
+		"conn": &conn,
 	}).Traceln("--> server.Server.Serve")
-	//_, _ = server.PerformLogin("", in, out)
+
+	envs, err := server.getClientEnvs([]string{"TERM"}, in, out)
+	if err != nil {
+		return
+	}
+	rUser, err := server.requestClientEnv("USER", in, out)
+	if err != nil {
+		return
+	}
+	username, err := server.requestClientEnv("GOSH_USER", in, out)
+	if err != nil {
+		return
+	}
+	data := &login.TransactionData{
+		Service:    os.Args[0],
+		User:       username,
+		Tty:        "",
+		RHost:      addr.String(),
+		Authtok:    "",
+		Oldauthtok: "",
+		RUser:      rUser,
+		UserPrompt: "",
+	}
+
+	if server.stopTransfer(in, out) != nil {
+		return
+	}
 
 	ptmFd, ptsName := pty.Create()
 	ptmFile := os.NewFile(ptmFd, "ptm")
-	defer closeFile(ptmFile, "ptm")
+	defer connection.CloseFile(ptmFile, "ptm")
 	go connection.Forward(in, ptmFile, "client", "ptm")
 	go connection.Forward(ptmFile, out, "ptm", "client")
 	ptsFile, err := os.Create(ptsName)
 	if err != nil {
 		log.WithError(err).Fatalln("Couldn't open pts file.")
 	}
-	defer closeFile(ptsFile, "pts")
+	defer connection.CloseFile(ptsFile, "pts")
 
-	user := server.PerformLogin("", ptsFile, ptsFile)
+	//user := server.performLogin(data, ptsFile, ptsFile, fd)
+	//
+	//server.checkForNologinFile(ptsFile, ptsFile)
+	//
+	//server.printMotD(ptsFile, ptsFile)
+	//
+	//pwd, err := pw.GetPwByUid(user.PassWd.Uid)
+	//if err != nil {
+	//	log.WithError(err).Fatalln("Couldn't create new file.")
+	//}
+	//_ = cmd.Execute(pwd, envs, ptsFile, ptsFile)
 
-	server.checkForNologinFile(ptsFile, ptsFile)
-
-	server.printMotD(ptsFile, ptsFile)
-
-	pwd, err := pw.GetPwByUid(user.PassWd.Uid)
+	cmd := exec.Command("/bin/login", "-h", data.RHost)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+	}
+	//hostname, err := os.Hostname()
+	//if err != nil {
+	//	log.WithError(err).Fatalln("Couldn't lookup hostname")
+	//}
+	//envs = append([]string{
+	//	"USER=" + passWd.Name,
+	//	"UID=" + strconv.Itoa(int(passWd.Uid)),
+	//	"GID=" + strconv.Itoa(int(passWd.Gid)),
+	//	"HOME=" + passWd.HomeDir,
+	//	"SHELL=" + passWd.Shell,
+	//	"HOSTNAME=" + hostname,
+	//}, envs...)
+	cmd.Env = envs
+	cmd.Stdin = ptsFile
+	cmd.Stdout = ptsFile
+	cmd.Stderr = ptsFile
+	err = cmd.Run()
 	if err != nil {
-		log.WithError(err).Fatalln("Couldn't create new file.")
-	}
-	if err = shell.Execute(pwd, ptsFile, ptsFile); err != nil {
-		log.WithError(err).Fatalln("Shell returned an error.")
-	}
-}
-
-func closeFile(file *os.File, fileStr string) {
-	log.WithFields(log.Fields{
-		"file":    file,
-		"fileStr": fileStr,
-	}).Traceln("--> server.closeFile")
-	if err := file.Close(); err != nil {
-		log.WithError(err).Errorln(fmt.Sprintf("Couldn't close %s file.", fileStr))
+		log.WithError(err).Errorln("An error occured.")
 	} else {
-		log.Debugln(fmt.Sprintf("Closed %s file.", fileStr))
+		log.Debugln("Shell terminated.")
 	}
+	// TODO: Fix breakdown of connection and files.
 }
 
 type LoginResult struct {
@@ -81,13 +125,69 @@ type LoginResult struct {
 	error error
 }
 
-// Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
-func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) *login.User {
+func (server Server) getClientEnvs(envs []string, in io.Reader, out io.Writer) ([]string, error) {
 	log.WithFields(log.Fields{
-		"userName": userName,
-		"in":       &in,
-		"out":      &out,
-	}).Traceln("--> server.Server.PerformLogin")
+		"envs": envs,
+		"in":   &in,
+		"out":  &out,
+	}).Traceln("--> server.getClientEnvs")
+	var filledEnvs []string
+	for _, env := range envs {
+		value, err := server.requestClientEnv(env, in, out)
+		if err != nil {
+			return nil, err
+		}
+		filledEnvs = append(filledEnvs, fmt.Sprintf("%s=%s", env, value))
+	}
+	log.WithField("filledEnvs", filledEnvs).Debugln("Done gathering environment variables.")
+	return filledEnvs, nil
+}
+
+func (server Server) stopTransfer(in io.Reader, out io.Writer) error {
+	log.WithFields(log.Fields{
+		"in":  &in,
+		"out": &out,
+	}).Traceln("--> server.stopTransfer")
+	_, err := fmt.Fprint(out, connection.DonePacket{}.String())
+	if err != nil {
+		log.WithError(err).Errorln("Couldn't send DonePacket.")
+		return err
+	}
+	log.Debugln("Sent done packet.")
+	return nil
+}
+
+func (server Server) requestClientEnv(env string, in io.Reader, out io.Writer) (string, error) {
+	log.WithFields(log.Fields{
+		"env": env,
+		"in":  &in,
+		"out": &out,
+	}).Traceln("--> server.requestClientEnv")
+	log.WithField("env", env).Debugln("Requesting environment variable from client.")
+	bufIn := bufio.NewReader(in)
+	_, err := fmt.Fprint(out, connection.EnvPacket{Request: env}.String())
+	if err != nil {
+		log.WithError(err).Errorln("Failed to send packet.")
+		return "", err
+	}
+	value, err := bufIn.ReadString('\n')
+	if err != nil {
+		log.WithError(err).Errorln("Failed to read environment variable value.")
+		return "", err
+	}
+	value = strings.TrimSpace(value)
+	log.WithField("value", value).Debugln("Read environment variable value.")
+	return value, nil
+}
+
+// Performs login attempts until either the attempt succeeds or the limit of tries has been reached.
+func (server Server) performLogin(data *login.TransactionData, in io.Reader, out io.Writer, fd uintptr) *login.User {
+	log.WithFields(log.Fields{
+		"data": data,
+		"in":   &in,
+		"out":  &out,
+		"fd":   fd,
+	}).Traceln("--> server.Server.performLogin")
 	timeout := make(chan bool, 1)
 	loginChan := make(chan LoginResult)
 	go func() {
@@ -118,7 +218,7 @@ func (server Server) PerformLogin(userName string, in io.Reader, out io.Writer) 
 				"try":       try,
 				"maxTries":  maxTries,
 			}).Debugln("Start authentication.")
-			user, err := login.Authenticate(userName, in, out)
+			user, err := login.Authenticate(data, in, out, fd)
 			if err != nil {
 				switch err.(type) {
 				case *login.AuthError:

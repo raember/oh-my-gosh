@@ -10,7 +10,9 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pw"
 	"io"
 	"os"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 type User struct {
@@ -19,11 +21,36 @@ type User struct {
 	PassWd      *pw.PassWd
 }
 
-func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
+type TransactionData struct {
+	Service    string
+	User       string
+	Tty        string
+	RHost      string
+	Authtok    string
+	Oldauthtok string
+	RUser      string
+	UserPrompt string
+}
+
+func (data TransactionData) String() string {
+	return strings.Join([]string{
+		data.Service,
+		data.User,
+		data.Tty,
+		data.RHost,
+		data.Authtok,
+		data.Oldauthtok,
+		data.RUser,
+		data.UserPrompt,
+	}, ", ")
+}
+
+func Authenticate(data *TransactionData, in io.Reader, out io.Writer, fd uintptr) (*User, error) {
 	log.WithFields(log.Fields{
-		"userName": userName,
-		"in":       &in,
-		"out":      &out,
+		"data": data,
+		"in":   &in,
+		"out":  &out,
+		"fd":   fd,
 	}).Traceln("--> login.Authenticate")
 	if os.Getuid() != 0 {
 		log.WithField("uid", os.Getuid()).Warnln("Process isn't root. Login as different loggedInUser won't work.")
@@ -32,13 +59,18 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 	bufIn := bufio.NewReader(in)
 	//bufOut := bufio.NewWriter(out)
 	var loggedInUser User
-	transaction, err := pam.StartFunc(os.Args[0], userName, func(style pam.Style, message string) (string, error) {
+	transaction, err := pam.StartFunc(data.Service, data.User, func(style pam.Style, message string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
 			log.Traceln("PromptEchoOff")
 			log.WithField("message", message).Debugln("Reading password.")
 			_, _ = fmt.Fprint(out, message)
+			//str, err := speakeasy.FAsk(out, message)
+			_, _ = echoOff(fd)
 			str, err := bufIn.ReadString('\n')
+			echoOn(fd)
+			//bytes, err := terminal.ReadPassword(int(fd))
+			//str := string(bytes)
 			if err != nil {
 				log.WithError(err).Errorln("Couldn't read password.")
 				return "", err
@@ -78,7 +110,10 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 		return &loggedInUser, err
 	}
 
-	loggedInUser.Transaction = setupTransaction(transaction)
+	if err = setupTransaction(transaction, data); err != nil {
+		return nil, err
+	}
+	loggedInUser.Transaction = transaction
 	err = transaction.Authenticate(0)
 	if err != nil {
 		log.WithField("status", transaction.Error()).Errorln("Err")
@@ -87,58 +122,17 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 		return &loggedInUser, authErr
 	}
 	log.Infoln("Authentication succeeded.")
-	//_, _ = bufOut.WriteString(connection.DonePacket{}.String())
-	//_ = bufOut.Flush()
 
-	// Print all the transaction commands:
 	err = loggedInUser.Transaction.AcctMgmt(pam.Silent)
 	if err != nil {
 		log.WithError(err).Errorln("Couldn't validate the loggedInUser.")
 	}
-	service, err := loggedInUser.Transaction.GetItem(pam.Service)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Service from transaction.")
-	} else {
-		log.WithField("service", service).Infoln("Got service from pam.")
-	}
-	username, err := loggedInUser.Transaction.GetItem(pam.User)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting User from transaction.")
-	} else {
-		log.WithField("username", username).Infoln("Got username from pam.")
-	}
-	tty, err := loggedInUser.Transaction.GetItem(pam.Tty)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Tty from transaction.")
-	} else {
-		log.WithField("tty", tty).Infoln("Got tty from pam.")
-	}
-	rhost, err := loggedInUser.Transaction.GetItem(pam.Rhost)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Rhost from transaction.")
-	} else {
-		log.WithField("rhost", rhost).Infoln("Got rhost from pam.")
-	}
-	ruser, err := loggedInUser.Transaction.GetItem(pam.Ruser)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Ruser from transaction.")
-	} else {
-		log.WithField("ruser", ruser).Infoln("Got ruser from pam.")
-	}
-	userPrompt, err := loggedInUser.Transaction.GetItem(pam.UserPrompt)
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting UserPrompt from transaction.")
-	} else {
-		log.WithField("userPrompt", userPrompt).Infoln("Got userPrompt from pam.")
-	}
-	envs, err := loggedInUser.Transaction.GetEnvList()
-	if err != nil {
-		log.WithError(err).Errorln("Failed getting Env from transaction.")
-	} else {
-		log.WithField("envs", envs).Infoln("Got env list from pam.")
+
+	if err = parseTransaction(loggedInUser.Transaction, data); err != nil {
+		return nil, err
 	}
 
-	passWd, err := pw.GetPwByName(username)
+	passWd, err := pw.GetPwByName(data.User)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
@@ -148,6 +142,35 @@ func Authenticate(userName string, in io.Reader, out io.Writer) (*User, error) {
 	loggedInUser.PassWd = passWd
 
 	return &loggedInUser, nil
+}
+
+// echoOff turns off the terminal echo.
+func echoOff(fd uintptr) (int, error) {
+	log.WithField("fd", fd).Traceln("--> login.echoOff")
+	pid, err := syscall.ForkExec("/bin/stty", []string{"stty", "-F", strconv.Itoa(int(fd)), "-echo"}, &syscall.ProcAttr{Dir: "", Files: []uintptr{fd}})
+	if err != nil {
+		log.WithError(err).Errorln("Failed turning echo off.")
+		return 0, err
+	}
+	log.WithField("pid", pid).Debugln("Turned echo off.")
+	return pid, nil
+}
+
+// echoOn turns back on the terminal echo.
+func echoOn(fd uintptr) {
+	log.WithField("fd", fd).Traceln("--> login.echoOn")
+	pid, e := syscall.ForkExec("/bin/stty", []string{"stty", "-F", strconv.Itoa(int(fd)), "echo"}, &syscall.ProcAttr{Dir: "", Files: []uintptr{fd}})
+	if e == nil {
+		log.WithField("pid", pid).Debugln("Turned echo on.")
+		wpid, err := syscall.Wait4(pid, nil, 0, nil)
+		if err != nil {
+			log.WithError(err).Errorln("Failed waiting for subprocess.")
+		} else {
+			log.WithField("wpid", wpid).Debugln("Waited for subprocess.")
+		}
+	} else {
+		log.WithError(e).Errorln("Failed turning echo on.")
+	}
 }
 
 func (user User) String() string {
@@ -165,7 +188,130 @@ func (e *AuthError) Error() string {
 	return fmt.Sprintf("%s: %s", e.User, e.Err)
 }
 
-func setupTransaction(transaction *pam.Transaction) *pam.Transaction {
+func setupTransaction(transaction *pam.Transaction, data *TransactionData) error {
+	log.WithFields(log.Fields{
+		"transaction": transaction,
+		"data":        data,
+	}).Traceln("--> login.setupTransaction")
 	// TODO: Get information about the peer
-	return transaction
+	if err := transaction.SetItem(pam.Service, data.Service); err != nil {
+		log.WithError(err).Errorln("Failed to set Service.")
+		return err
+	}
+	if err := transaction.SetItem(pam.User, data.User); err != nil {
+		log.WithError(err).Errorln("Failed to set User.")
+		return err
+	}
+	if err := transaction.SetItem(pam.Tty, data.Tty); err != nil {
+		log.WithError(err).Errorln("Failed to set Tty.")
+		return err
+	}
+	if err := transaction.SetItem(pam.Rhost, data.RHost); err != nil {
+		log.WithError(err).Errorln("Failed to set RHost.")
+		return err
+	}
+	if data.Authtok != "" {
+		if err := transaction.SetItem(pam.Authtok, data.Authtok); err != nil {
+			log.WithError(err).Errorln("Failed to set Authtok.")
+			return err
+		}
+	}
+	if data.Oldauthtok != "" {
+		if err := transaction.SetItem(pam.Oldauthtok, data.Oldauthtok); err != nil {
+			log.WithError(err).Errorln("Failed to set Oldauthtok.")
+			return err
+		}
+	}
+	if err := transaction.SetItem(pam.Ruser, data.RUser); err != nil {
+		log.WithError(err).Errorln("Failed to set RUser.")
+		return err
+	}
+	if err := transaction.SetItem(pam.UserPrompt, data.UserPrompt); err != nil {
+		log.WithError(err).Errorln("Failed to set UserPrompt.")
+		return err
+	}
+	log.WithFields(log.Fields{
+		"service":    data.Service,
+		"user":       data.User,
+		"tty":        data.Tty,
+		"rhost":      data.RHost,
+		"authtok":    data.Authtok,
+		"olauthtok":  data.Oldauthtok,
+		"ruser":      data.RUser,
+		"userprompt": data.UserPrompt,
+	}).Debugln("Setup transaction object.")
+	return nil
+}
+
+func parseTransaction(transaction *pam.Transaction, data *TransactionData) error {
+	log.WithFields(log.Fields{
+		"transaction": transaction,
+		"data":        data,
+	}).Traceln("--> login.parseTransaction")
+	service, err := transaction.GetItem(pam.Service)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set Service.")
+		return err
+	}
+	data.Service = service
+
+	userName, err := transaction.GetItem(pam.User)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set User.")
+		return err
+	}
+	data.User = userName
+
+	tty, err := transaction.GetItem(pam.Tty)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set Tty.")
+		return err
+	}
+	data.Tty = tty
+
+	rHost, err := transaction.GetItem(pam.Rhost)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set RHost.")
+		return err
+	}
+	data.RHost = rHost
+
+	authtok, err := transaction.GetItem(pam.Authtok)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set Authtok.")
+		return err
+	}
+	data.Authtok = authtok
+
+	oldauthtok, err := transaction.GetItem(pam.Oldauthtok)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set Oldauthtok.")
+		return err
+	}
+	data.Oldauthtok = oldauthtok
+
+	rUser, err := transaction.GetItem(pam.Ruser)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set RUser.")
+		return err
+	}
+	data.RUser = rUser
+
+	userPrompt, err := transaction.GetItem(pam.UserPrompt)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to set UserPrompt.")
+		return err
+	}
+	data.UserPrompt = userPrompt
+	log.WithFields(log.Fields{
+		"service":    data.Service,
+		"user":       data.User,
+		"tty":        data.Tty,
+		"rhost":      data.RHost,
+		"authtok":    data.Authtok,
+		"olauthtok":  data.Oldauthtok,
+		"ruser":      data.RUser,
+		"userprompt": data.UserPrompt,
+	}).Debugln("Updated data.")
+	return nil
 }
