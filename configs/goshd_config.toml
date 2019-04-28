@@ -8,6 +8,7 @@
 [Server]
 Port = 2222
 Protocol = "tcp"
+MaxSessions = 10
 
 [Logging]
 LogLevel = "info"
@@ -16,4 +17,3 @@ LogLevel = "info"
 LoginGraceTime = 120
 PermitRootLogin = false
 MaxTries = 3
-MaxSessions = 10

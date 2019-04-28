@@ -5,7 +5,7 @@ import "testing"
 func TestGetPwByName(t *testing.T) {
 	passwd, err := GetPwByName("test")
 	if err != nil {
-		t.Error("Couldn't look up test user: " + err.Error())
+		t.Error("Failed to look up test user: " + err.Error())
 		t.Fail()
 		return
 	}
@@ -30,7 +30,7 @@ func TestGetPwByUid(t *testing.T) {
 	uid := pwd.Uid
 	passwd, err := GetPwByUid(uid)
 	if err != nil {
-		t.Error("Couldn't look up test user: " + err.Error())
+		t.Error("Failed to look up test user: " + err.Error())
 		t.Fail()
 		return
 	}

@@ -27,7 +27,7 @@ func Execute(passWd *pw.PassWd, envs []string, in io.Reader, out io.Writer) erro
 	shell.Dir = passWd.HomeDir
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.WithError(err).Fatalln("Couldn't lookup hostname")
+		log.WithError(err).Fatalln("Failed to lookup hostname")
 	}
 	envs = append([]string{
 		"USER=" + passWd.Name,

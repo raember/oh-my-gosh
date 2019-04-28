@@ -22,7 +22,7 @@ func main() {
 	username := ""
 	err := os.Setenv("GOSH_USER", username)
 	if err != nil {
-		log.WithError(err).Fatalln("Couldn't set GOSH_USER.")
+		log.WithError(err).Fatalln("Failed to set GOSH_USER.")
 	}
 	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("Config path set.")
 	log.WithFields(log.Fields{"address": address}).Debugln("Host address set.")
@@ -48,14 +48,14 @@ func main() {
 	//go connection.Forward(conn, os.Stdout, "server", "stdout")
 	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		log.WithError(err).Fatalln("Couldn't set terminal into raw mode.")
+		log.WithError(err).Fatalln("Failed to set terminal into raw mode.")
 	} else {
 		log.WithField("oldState", oldState).Debugln("Set terminal into raw mode.")
 	}
 	defer func() {
 		err = terminal.Restore(int(os.Stdin.Fd()), oldState)
 		if err != nil {
-			log.WithError(err).Fatalln("Couldn't set terminal into cooked mode.")
+			log.WithError(err).Fatalln("Failed to set terminal into cooked mode.")
 		}
 	}()
 

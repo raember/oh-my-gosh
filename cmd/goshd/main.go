@@ -2,89 +2,68 @@ package main
 
 import "C"
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/socket"
 	"os"
-	"os/exec"
+	"path"
 	"strconv"
+	"syscall"
 )
 
-var config *viper.Viper
-var certFile = flag.String("cert", common.CERTFILE, "Certificate file.")
-var keyFile = flag.String("key", common.KEYFILE, "Key file.")
-var configPath = flag.String("conf", common.CONFIGPATH, "LoadConfig path.")
-
-/*
-The goshd service has 2 possible control flows:
-1. Set up a listener and wait for incoming connections.
-2. Serve an individual connection.
-*/
 func main() {
 	log.WithField("args", os.Args).Traceln("--> goshd.main")
-
-	// I/O control:
-	fd := flag.Uint("fd", 0, "Use file descriptor for socket.")
+	configPath := flag.String("conf", common.CONFIGPATH, "Config path.")
+	certFile := flag.String("cert", common.CERTFILE, "Certificate file.")
+	keyFile := flag.String("key", common.KEYFILE, "Key file.")
 
 	flag.Parse()
 	log.WithFields(log.Fields{
 		"certFile":   *certFile,
 		"keyFile":    *keyFile,
 		"configPath": *configPath,
-		"fd":         *fd,
 	}).Debugln("Parsed arguments.")
 
-	config = server.LoadConfig(*configPath)
-
-	if *fd != 0 {
-		srvr := server.NewServer(config)
-		conn, err := connection.FromFd(uintptr(*fd))
-		if err != nil {
-			log.WithError(err).Fatalln("Couldn't get connection from fd.")
-		}
-		defer connection.CloseConn(conn, "client")
-		tlsConn := tls.Server(conn, &tls.Config{
-			Certificates: []tls.Certificate{server.LoadCertKeyPair(*certFile, *keyFile)},
-		})
-		srvr.Serve(tlsConn.RemoteAddr(), tlsConn, tlsConn, &conn)
-	} else {
-		listen()
-	}
-	log.Traceln("Exiting")
-}
-
-// Listen for incoming connections and recurse for every new connection.
-func listen() {
-	log.Traceln("--> main.listen")
-	fdChan := make(chan uintptr)
+	srvr := server.NewServer(server.LoadConfig(*configPath))
+	var children []uintptr
+	fdChan := make(chan server.RemoteHandle)
 	defer close(fdChan)
-	go server.WaitForConnections(socket.Listen(common.PORT), fdChan)
-	for fd := range fdChan {
-		bin := os.Args[0]
-		args := []string{
+	go srvr.AwaitConnections(fdChan)
+	for remoteHandle := range fdChan {
+		log.WithField("remoteHandle", remoteHandle).Debugln("Got a remote handle.")
+		bin := path.Join(path.Dir(os.Args[0]), "goshh")
+		args := []string{bin,
+			"--conf", *configPath,
 			"--cert", *certFile,
 			"--key", *keyFile,
-			"--conf", *configPath,
-			"--fd", strconv.FormatUint(uint64(fd), 10),
+			"--fd", strconv.FormatUint(uint64(remoteHandle.Fd), 10),
+			"--remote", remoteHandle.RemoteAddr.String(),
 		}
-		cmd := exec.Command(bin, args...)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String()))
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
-			log.WithError(err).Fatalln("Couldn't execute child")
+		pid, err := syscall.ForkExec(bin, args, &syscall.ProcAttr{
+			Env: []string{
+				fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String()),
+			},
+			Files: []uintptr{
+				uintptr(os.Stdin.Fd()),
+				uintptr(os.Stdout.Fd()),
+				uintptr(os.Stderr.Fd()),
+			},
+		})
+		if err != nil {
+			log.WithError(err).Fatalln("Failed to forkexec child")
 		}
-		log.WithField("cmd", cmd).Infoln("Started child.")
+		log.WithField("pid", pid).Infoln("Forkexeced child.")
+		children = append(children, uintptr(pid))
+		log.WithFields(log.Fields{
+			"children": children,
+			"pid":      pid,
+		}).Debugln("Added child pid to array.")
 	}
-}
-
-func init() {
-	_ = os.Setenv("GODEBUG", os.Getenv("GODEBUG")+",tls13=1")
+	for pid := range children {
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			log.WithError(err).Errorln("Failed to kill child.")
+		}
+	}
 }

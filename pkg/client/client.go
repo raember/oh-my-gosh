@@ -76,7 +76,7 @@ func (client Client) Dial() (net.Conn, error) {
 			"protocol": address.Scheme,
 			"host":     address.Host,
 			"error":    err.Error(),
-		}).Errorln("Couldn't connect to host.")
+		}).Errorln("Failed to connect to host.")
 		return nil, err
 	}
 	log.WithField("remote", conn.RemoteAddr()).Infoln("Connection established.")
@@ -92,12 +92,12 @@ func PerformEnvTransfer(in io.Reader, out io.Writer) error {
 	for {
 		str, err := bIn.ReadString('\n')
 		if err != nil {
-			log.WithError(err).Errorln("Couldn't read from server.")
+			log.WithError(err).Errorln("Failed to read from server.")
 			return err
 		}
 		pkg, err := connection.Parse(strings.TrimSpace(str))
 		if err != nil {
-			log.WithError(err).Errorln("Couldn't parse request.")
+			log.WithError(err).Errorln("Failed to parse request.")
 			return err
 		}
 		if pkg.Done() {
@@ -105,7 +105,7 @@ func PerformEnvTransfer(in io.Reader, out io.Writer) error {
 		}
 		err = pkg.Ask(os.Stdin, out)
 		if err != nil {
-			log.WithError(err).Errorln("Couldn't perform request.")
+			log.WithError(err).Errorln("Failed to perform request.")
 			return err
 		}
 		//// TODO: Remove dirty hack.

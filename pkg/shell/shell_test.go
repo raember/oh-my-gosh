@@ -22,6 +22,6 @@ func TestExecute(t *testing.T) {
 	}
 	err = Execute(pwd, os.Stdin, os.Stdout)
 	if err != nil {
-		t.Error("Couldn't run bash.")
+		t.Error("Failed to run bash.")
 	}
 }

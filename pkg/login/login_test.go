@@ -10,7 +10,7 @@ func TestAuthenticate(t *testing.T) {
 	stdout := bytes.NewBufferString("")
 	user, err := Authenticate("", stdin, stdout)
 	if err != nil {
-		t.Error("Couldn't login: " + err.Error())
+		t.Error("Failed to login: " + err.Error())
 		return
 	}
 	if user.Name != "test" {

@@ -72,7 +72,7 @@ func Authenticate(data *TransactionData, in io.Reader, out io.Writer, fd uintptr
 			//bytes, err := terminal.ReadPassword(int(fd))
 			//str := string(bytes)
 			if err != nil {
-				log.WithError(err).Errorln("Couldn't read password.")
+				log.WithError(err).Errorln("Failed to read password.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
@@ -84,7 +84,7 @@ func Authenticate(data *TransactionData, in io.Reader, out io.Writer, fd uintptr
 			_, _ = fmt.Fprint(out, message)
 			str, err := bufIn.ReadString('\n')
 			if err != nil {
-				log.WithError(err).Errorln("Couldn't read loggedInUser name.")
+				log.WithError(err).Errorln("Failed to read loggedInUser name.")
 				return "", err
 			}
 			str = strings.TrimSpace(str)
@@ -106,7 +106,7 @@ func Authenticate(data *TransactionData, in io.Reader, out io.Writer, fd uintptr
 		}
 	})
 	if err != nil {
-		log.WithError(err).Errorln("Couldn't start authentication.")
+		log.WithError(err).Errorln("Failed to start authentication.")
 		return &loggedInUser, err
 	}
 
@@ -118,14 +118,14 @@ func Authenticate(data *TransactionData, in io.Reader, out io.Writer, fd uintptr
 	if err != nil {
 		log.WithField("status", transaction.Error()).Errorln("Err")
 		authErr := &AuthError{Err: err.Error(), User: loggedInUser.Name}
-		log.WithField("error", authErr.Error()).Errorln("Couldn't authenticate.")
+		log.WithField("error", authErr.Error()).Errorln("Failed to authenticate.")
 		return &loggedInUser, authErr
 	}
 	log.Infoln("Authentication succeeded.")
 
 	err = loggedInUser.Transaction.AcctMgmt(pam.Silent)
 	if err != nil {
-		log.WithError(err).Errorln("Couldn't validate the loggedInUser.")
+		log.WithError(err).Errorln("Failed to validate the loggedInUser.")
 	}
 
 	if err = parseTransaction(loggedInUser.Transaction, data); err != nil {
@@ -136,7 +136,7 @@ func Authenticate(data *TransactionData, in io.Reader, out io.Writer, fd uintptr
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Errorln("Couldn't setup loggedInUser.")
+		}).Errorln("Failed to setup loggedInUser.")
 		return &loggedInUser, err
 	}
 	loggedInUser.PassWd = passWd

@@ -32,7 +32,7 @@ func LoadConfig(configpath string) *viper.Viper {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Warnln("Couldn't read config file. Using defaults instead.")
+		}).Warnln("Failed to read config file. Using defaults instead.")
 		return config
 	}
 	config.WatchConfig()

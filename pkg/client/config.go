@@ -25,7 +25,7 @@ func Config(configpath string) *viper.Viper {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
-		}).Warnln("Couldn't read config file.")
+		}).Warnln("Failed to read config file.")
 		return config
 	}
 	config.WatchConfig()

@@ -50,17 +50,17 @@ func Create() (uintptr, string) {
 	ptyFdC, err := C.posix_openpt(C.O_RDWR)
 	if err != nil {
 		err = ptyError("posix_openpt", err)
-		log.WithError(err).Fatalln("Couldn't open pseudo-terminal.")
+		log.WithError(err).Fatalln("Failed to open pseudo-terminal.")
 	}
 	if _, err := C.grantpt(ptyFdC); err != nil {
 		err = ptyError("grantpt", err)
 		C.close(ptyFdC)
-		log.WithError(err).Fatalln("Couldn't grant pseudo-terminal perms.")
+		log.WithError(err).Fatalln("Failed to grant pseudo-terminal perms.")
 	}
 	if _, err := C.unlockpt(ptyFdC); err != nil {
 		err = ptyError("unlockpt", err)
 		C.close(ptyFdC)
-		log.WithError(err).Fatalln("Couldn't unlock pseudo-terminal.")
+		log.WithError(err).Fatalln("Failed to unlock pseudo-terminal.")
 	}
 	ptyFd := uintptr(ptyFdC)
 	ptsName := C.GoString(C.ptsname(ptyFdC))
