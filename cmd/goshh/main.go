@@ -29,12 +29,20 @@ func main() {
 		"rAddr":      *rAddr,
 	}).Debugln("Parsed arguments.")
 
-	hst := host.NewHost(server.LoadConfig(*configPath), *certFile, *keyFile)
+	hst := host.NewHost(server.LoadConfig(*configPath))
+	if err := hst.LoadCertKeyPair(*certFile, *keyFile); err != nil {
+		log.WithError(err).Fatalln("Failed to prepare hosting.")
+	}
 	peerAddr, err := net.ResolveTCPAddr(common.TCP, *rAddr)
 	if err != nil {
 		log.WithError(err).Fatalln("Failed to resolve remote client address.")
 	}
-	hst.HandleConnection(uintptr(*fd), peerAddr)
+	if err := hst.Connect(uintptr(*fd), peerAddr); err != nil {
+		log.WithError(err).Fatalln("Failed to prepare hosting.")
+	}
+	if err := hst.Serve(); err != nil {
+		log.WithError(err).Fatalln("Hosting exited with an error.")
+	}
 }
 
 func init() {

@@ -9,8 +9,8 @@ import (
 
 func setDefaults(config *viper.Viper) {
 	log.WithField("config", config).Traceln("--> server.setDefaults")
-	config.SetDefault("Server.Port", common.PORT)
-	config.SetDefault("Server.Protocol", common.TCP)
+	config.SetDefault("Serve.Port", common.PORT)
+	config.SetDefault("Serve.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
 	config.SetDefault("Authentication.LoginGraceTime", 120)
 	config.SetDefault("Authentication.PermitRootLogin", false)

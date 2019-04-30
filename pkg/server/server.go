@@ -30,7 +30,7 @@ func (server Server) AwaitConnections(fdChan chan RemoteHandle) {
 
 	sockAddr := &unix.SockaddrInet4{
 		Addr: [4]byte{},
-		Port: server.config.GetInt("Server.Port"),
+		Port: server.config.GetInt("Serve.Port"),
 	}
 	err = unix.Bind(fd, sockAddr)
 	if err != nil {
@@ -41,7 +41,7 @@ func (server Server) AwaitConnections(fdChan chan RemoteHandle) {
 			"sockAddr": sockAddr,
 		}).Debugln("Bound socket.")
 	}
-	maxSessions := server.config.GetInt("Server.MaxSessions")
+	maxSessions := server.config.GetInt("Serve.MaxSessions")
 	err = unix.Listen(fd, maxSessions)
 	if err != nil {
 		log.WithError(err).Fatalln("Failed to listen on socket.")

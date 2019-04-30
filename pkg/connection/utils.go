@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-func ConnFromFd(fd uintptr, certificate tls.Certificate) (net.Conn, error) {
+func ConnFromFd(fd uintptr, certificate *tls.Certificate) (net.Conn, error) {
 	log.WithFields(log.Fields{
 		"fd":          fd,
 		"certificate": certificate,
@@ -20,10 +20,14 @@ func ConnFromFd(fd uintptr, certificate tls.Certificate) (net.Conn, error) {
 		log.WithError(err).Errorln("Failed to make a connection from file descriptor.")
 		return nil, err
 	}
-	tlsConn := tls.Server(conn, &tls.Config{
-		Certificates: []tls.Certificate{certificate},
-	})
-	return tlsConn, nil
+	if certificate != nil {
+		tlsConn := tls.Server(conn, &tls.Config{
+			Certificates: []tls.Certificate{*certificate},
+		})
+		return tlsConn, nil
+	} else {
+		return conn, nil
+	}
 }
 
 func CloseFile(file *os.File) {

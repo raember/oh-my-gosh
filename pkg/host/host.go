@@ -15,26 +15,38 @@ import (
 
 type Host struct {
 	config      *viper.Viper
-	certificate tls.Certificate
+	certificate *tls.Certificate
+	conn        *net.Conn
+	rAddr       *net.TCPAddr
 }
 
-func NewHost(config *viper.Viper, certPath string, keyFilePath string) Host {
+func NewHost(config *viper.Viper) Host {
+	log.WithField("config", config).Traceln("--> host.NewHost")
+	return Host{config: config}
+}
+
+func (host *Host) LoadCertKeyPair(certPath string, keyFilePath string) error {
 	log.WithFields(log.Fields{
-		"config":      config,
 		"certPath":    certPath,
 		"keyFilePath": keyFilePath,
-	}).Traceln("--> host.NewHost")
-	return Host{
-		config:      config,
-		certificate: loadCertKeyPair(certPath, keyFilePath),
+	}).Traceln("--> host.loadCertKeyPair")
+	cert, err := tls.LoadX509KeyPair(certPath, keyFilePath)
+	if err != nil {
+		log.WithError(err).Fatalln("Failed to load certificate key pair.")
 	}
+	log.WithFields(log.Fields{
+		"certPath":    certPath,
+		"keyFilePath": keyFilePath,
+	}).Debugln("Loaded certificate key pair.")
+	host.certificate = &cert
+	return nil
 }
 
-func (host Host) HandleConnection(socketFd uintptr, rAddr *net.TCPAddr) error {
+func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 	log.WithFields(log.Fields{
 		"socketFd": socketFd,
 		"rAddr":    *rAddr,
-	}).Traceln("--> host.Host.HandleConnection")
+	}).Traceln("--> host.Host.Connect")
 	ErrorMsg := "Failed to handle connection."
 
 	conn, err := connection.ConnFromFd(socketFd, host.certificate)
@@ -42,26 +54,37 @@ func (host Host) HandleConnection(socketFd uintptr, rAddr *net.TCPAddr) error {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
-	log.WithField("rAddr", *rAddr).Infoln("Connected to client.")
+	log.WithFields(log.Fields{
+		"conn":  conn,
+		"rAddr": *rAddr,
+	}).Infoln("Connected to client.")
+	host.conn = &conn
+	host.rAddr = rAddr
+	return nil
+}
+
+func (host Host) Serve() error {
+	log.Traceln("--> host.Host.Serve")
+	ErrorMsg := "Failed to handle connection."
 
 	// Get the necessary information from the remote client
-	remote := rAddr.IP.String()
-	envs, err := host.getClientEnvs(conn, "TERM")
+	remote := host.rAddr.IP.String()
+	envs, err := host.getClientEnvs("TERM")
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
-	rUser, err := host.requestClientEnv("USER", conn)
+	rUser, err := host.requestClientEnv("USER")
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
-	username, err := host.requestClientEnv("GOSH_USER", conn)
+	username, err := host.requestClientEnv("GOSH_USER")
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
-	if err = host.stopTransfer(conn); err != nil {
+	if err = host.stopTransfer(); err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
@@ -99,8 +122,12 @@ func (host Host) HandleConnection(socketFd uintptr, rAddr *net.TCPAddr) error {
 		log.WithField("pid", pid).Debugln("Forked login.")
 	}
 
-	go connection.Forward(ptm, conn, "ptm", "client")
-	go connection.Forward(conn, ptm, "client", "ptm")
+	// TODO: Handle forwarding yourself.
+	go connection.Forward(ptm, *host.conn, "ptm", "client")
+	go connection.Forward(*host.conn, ptm, "client", "ptm")
+
+	//rFdSet := unix.FdSet{}
+	//n, err := unix.Pselect(3, &rFdSet, &rFdSet, &rFdSet, nil, nil)
 
 	wpid, err := syscall.Wait4(pid, nil, 0, nil)
 	if err != nil {
@@ -112,18 +139,15 @@ func (host Host) HandleConnection(socketFd uintptr, rAddr *net.TCPAddr) error {
 	// TODO: Fix breakdown of connection and files.
 	connection.CloseFile(pts)
 	connection.CloseFile(ptm)
-	connection.CloseConn(conn)
+	connection.CloseConn(*host.conn)
 	return nil
 }
 
-func (host Host) getClientEnvs(conn net.Conn, envs ...string) ([]string, error) {
-	log.WithFields(log.Fields{
-		"conn": conn,
-		"envs": envs,
-	}).Traceln("--> host.Host.getClientEnvs")
+func (host Host) getClientEnvs(envs ...string) ([]string, error) {
+	log.WithField("envs", envs).Traceln("--> host.Host.getClientEnvs")
 	var filledEnvs []string
 	for _, env := range envs {
-		value, err := host.requestClientEnv(env, conn)
+		value, err := host.requestClientEnv(env)
 		if err != nil {
 			return nil, err
 		}
@@ -133,14 +157,11 @@ func (host Host) getClientEnvs(conn net.Conn, envs ...string) ([]string, error) 
 	return filledEnvs, nil
 }
 
-func (host Host) requestClientEnv(env string, conn net.Conn) (string, error) {
-	log.WithFields(log.Fields{
-		"conn": conn,
-		"env":  env,
-	}).Traceln("--> host.Host.requestClientEnv")
+func (host Host) requestClientEnv(env string) (string, error) {
+	log.WithField("env", env).Traceln("--> host.Host.requestClientEnv")
 	log.WithField("env", env).Debugln("Requesting environment variable from client.")
-	bufIn := bufio.NewReader(conn)
-	_, err := fmt.Fprint(conn, connection.EnvPacket{Request: env}.String())
+	bufIn := bufio.NewReader(*host.conn)
+	_, err := fmt.Fprint(*host.conn, connection.EnvPacket{Request: env}.String())
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send packet.")
 		return "", err
@@ -155,29 +176,13 @@ func (host Host) requestClientEnv(env string, conn net.Conn) (string, error) {
 	return value, nil
 }
 
-func (host Host) stopTransfer(conn net.Conn) error {
-	log.WithField("conn", conn).Traceln("--> host.Host.stopTransfer")
-	_, err := fmt.Fprint(conn, connection.DonePacket{}.String())
+func (host Host) stopTransfer() error {
+	log.Traceln("--> host.Host.stopTransfer")
+	_, err := fmt.Fprint(*host.conn, connection.DonePacket{}.String())
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send DonePacket.")
 		return err
 	}
 	log.Debugln("Sent done packet.")
 	return nil
-}
-
-func loadCertKeyPair(certPath string, keyFilePath string) tls.Certificate {
-	log.WithFields(log.Fields{
-		"certPath":    certPath,
-		"keyFilePath": keyFilePath,
-	}).Traceln("--> host.loadCertKeyPair")
-	cert, err := tls.LoadX509KeyPair(certPath, keyFilePath)
-	if err != nil {
-		log.WithError(err).Fatalln("Failed to load certificate key pair.")
-	}
-	log.WithFields(log.Fields{
-		"certPath":    certPath,
-		"keyFilePath": keyFilePath,
-	}).Debugln("Loaded certificate key pair.")
-	return cert
 }
