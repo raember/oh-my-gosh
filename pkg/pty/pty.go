@@ -20,53 +20,47 @@ package pty
 import "C"
 
 import (
-	"fmt"
 	log "github.com/sirupsen/logrus"
-	"syscall"
+	"os"
 )
 
-type PtyError struct {
-	FuncName    string
-	ErrorString string
-	Errno       syscall.Errno
-}
-
-func ptyError(name string, err error) *PtyError {
-	log.WithFields(log.Fields{
-		"name": name,
-		"err":  err,
-	}).Traceln("--> pty.ptyError")
-	return &PtyError{name, err.Error(), err.(syscall.Errno)}
-}
-
-func (e *PtyError) Error() string {
-	log.Traceln("--> pty.PtyError.Error")
-	return fmt.Sprintf("%s: %s", e.FuncName, e.ErrorString)
-}
-
-// Creates a master pty and the name of the linked slave pts.
-func Create() (uintptr, string) {
+// Creates a pty pair
+func Create() (ptm *os.File, pts *os.File, err error) {
 	log.Traceln("--> pty.Create")
 	ptyFdC, err := C.posix_openpt(C.O_RDWR)
 	if err != nil {
-		err = ptyError("posix_openpt", err)
-		log.WithError(err).Fatalln("Failed to open pseudo-terminal.")
+		log.WithError(err).Errorln("Failed to open pseudo-terminal.")
+		return
 	}
-	if _, err := C.grantpt(ptyFdC); err != nil {
-		err = ptyError("grantpt", err)
+	if _, err = C.grantpt(ptyFdC); err != nil {
 		C.close(ptyFdC)
-		log.WithError(err).Fatalln("Failed to grant pseudo-terminal perms.")
+		log.WithError(err).Errorln("Failed to grant pseudo-terminal perms.")
+		return
 	}
-	if _, err := C.unlockpt(ptyFdC); err != nil {
-		err = ptyError("unlockpt", err)
+	if _, err = C.unlockpt(ptyFdC); err != nil {
 		C.close(ptyFdC)
-		log.WithError(err).Fatalln("Failed to unlock pseudo-terminal.")
+		log.WithError(err).Errorln("Failed to unlock pseudo-terminal.")
+		return
 	}
 	ptyFd := uintptr(ptyFdC)
 	ptsName := C.GoString(C.ptsname(ptyFdC))
 	log.WithFields(log.Fields{
 		"ptsName": ptsName,
 		"ptyFd":   ptyFd,
+	}).Debugln("Got pty information.")
+	ptm = os.NewFile(ptyFd, "/dev/pts/ptmx")
+	pts, err = os.OpenFile(ptsName, os.O_RDWR, 0755)
+	if err != nil {
+		log.WithError(err).WithField("ptsName", ptsName).Errorln("Failed to open pts.")
+		if closeErr := ptm.Close(); closeErr != nil {
+			log.WithError(closeErr).Errorln("Failed to close ptm.")
+		}
+	}
+	log.WithFields(log.Fields{
+		"ptm":      ptm,
+		"ptm.Fd()": ptm.Fd(),
+		"pts":      pts,
+		"pts.Fd()": pts.Fd(),
 	}).Infoln("Opened pseudo terminal.")
-	return ptyFd, ptsName
+	return
 }

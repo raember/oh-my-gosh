@@ -39,7 +39,7 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	defer connection.CloseConn(conn, "server")
+	defer connection.CloseConn(conn)
 	err = client.PerformEnvTransfer(conn, conn)
 	if err != nil {
 		os.Exit(1)

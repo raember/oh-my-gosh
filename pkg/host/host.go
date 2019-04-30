@@ -9,7 +9,6 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
 	"net"
-	"os"
 	"strings"
 	"syscall"
 )
@@ -17,52 +16,54 @@ import (
 type Host struct {
 	config      *viper.Viper
 	certificate tls.Certificate
-	conn        net.Conn
 }
 
 func NewHost(config *viper.Viper, certPath string, keyFilePath string) Host {
-	log.WithField("config", config).Traceln("--> host.NewHost")
+	log.WithFields(log.Fields{
+		"config":      config,
+		"certPath":    certPath,
+		"keyFilePath": keyFilePath,
+	}).Traceln("--> host.NewHost")
 	return Host{
 		config:      config,
 		certificate: loadCertKeyPair(certPath, keyFilePath),
-		conn:        nil,
 	}
 }
 
-func (host Host) HandleConnection(fd uintptr, rAddr *net.TCPAddr) {
+func (host Host) HandleConnection(socketFd uintptr, rAddr *net.TCPAddr) error {
 	log.WithFields(log.Fields{
-		"fd":    fd,
-		"rAddr": *rAddr,
+		"socketFd": socketFd,
+		"rAddr":    *rAddr,
 	}).Traceln("--> host.Host.HandleConnection")
+	ErrorMsg := "Failed to handle connection."
 
-	conn, err := net.FileConn(os.NewFile(fd, "conn"))
+	conn, err := connection.ConnFromFd(socketFd, host.certificate)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err,
-			"fd":    fd,
-		}).Errorln("Failed to make a connection from file descriptor.")
-		return
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
 	}
-	host.conn = tls.Server(conn, &tls.Config{
-		Certificates: []tls.Certificate{host.certificate},
-	})
 	log.WithField("rAddr", *rAddr).Infoln("Connected to client.")
 
 	// Get the necessary information from the remote client
-	envs, err := host.getClientEnvs("TERM")
+	remote := rAddr.IP.String()
+	envs, err := host.getClientEnvs(conn, "TERM")
 	if err != nil {
-		return
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
 	}
-	rUser, err := host.requestClientEnv("USER")
+	rUser, err := host.requestClientEnv("USER", conn)
 	if err != nil {
-		return
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
 	}
-	username, err := host.requestClientEnv("GOSH_USER")
+	username, err := host.requestClientEnv("GOSH_USER", conn)
 	if err != nil {
-		return
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
 	}
-	if host.stopTransfer() != nil {
-		return
+	if err = host.stopTransfer(conn); err != nil {
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
 	}
 
 	// Done gathering all the information.
@@ -70,40 +71,20 @@ func (host Host) HandleConnection(fd uintptr, rAddr *net.TCPAddr) {
 		"envs":     envs,
 		"rUser":    rUser,
 		"username": username,
+		"remote":   remote,
 	}).Infoln("Got all the information from the client.")
 
-	ptmFd, ptsName := pty.Create()
-	ptmFile := os.NewFile(ptmFd, "ptm")
-	defer connection.CloseFile(ptmFile, "ptm")
-	go connection.Forward(host.conn, ptmFile, "client", "ptm")
-	go connection.Forward(ptmFile, host.conn, "ptm", "client")
-	ptsFile, err := os.Create(ptsName)
+	ptm, pts, err := pty.Create()
 	if err != nil {
-		log.WithError(err).Fatalln("Failed to open pts file.")
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
 	}
-	defer connection.CloseFile(ptsFile, "pts")
 
-	//user := host.performLogin(data, ptsFile, ptsFile, fd)
-	//
-	//host.checkForNologinFile(ptsFile, ptsFile)
-	//
-	//host.printMotD(ptsFile, ptsFile)
-	//
-	//pwd, err := pw.GetPwByUid(user.PassWd.Uid)
-	//if err != nil {
-	//	log.WithError(err).Fatalln("Failed to create new file.")
-	//}
-	//_ = cmd.Execute(pwd, envs, ptsFile, ptsFile)
-
-	ptsFd, err := syscall.Dup(int(ptsFile.Fd()))
-	if err != nil {
-		log.WithError(err).Fatalln("Failed to duplicate fd.")
-	}
-	pid, err := syscall.ForkExec("/bin/login", []string{"-h", rAddr.IP.String()}, &syscall.ProcAttr{
+	pid, err := syscall.ForkExec("/bin/login", []string{"-h", remote}, &syscall.ProcAttr{
 		Files: []uintptr{
-			uintptr(ptsFd),
-			uintptr(ptsFd),
-			uintptr(ptsFd),
+			pts.Fd(),
+			pts.Fd(),
+			pts.Fd(),
 		},
 		Env: envs,
 		Sys: &syscall.SysProcAttr{
@@ -112,25 +93,37 @@ func (host Host) HandleConnection(fd uintptr, rAddr *net.TCPAddr) {
 		},
 	})
 	if err != nil {
-		log.WithError(err).Fatalln("Failed to fork login.")
+		log.WithError(err).Errorln("Failed to fork login.")
+		return err
 	} else {
 		log.WithField("pid", pid).Debugln("Forked login.")
 	}
 
+	go connection.Forward(ptm, conn, "ptm", "client")
+	go connection.Forward(conn, ptm, "client", "ptm")
+
 	wpid, err := syscall.Wait4(pid, nil, 0, nil)
 	if err != nil {
 		log.WithError(err).Errorln("Failed waiting for login.")
+		return err
 	} else {
 		log.WithField("wpid", wpid).Debugln("Waited for login.")
 	}
 	// TODO: Fix breakdown of connection and files.
+	connection.CloseFile(pts)
+	connection.CloseFile(ptm)
+	connection.CloseConn(conn)
+	return nil
 }
 
-func (host Host) getClientEnvs(envs ...string) ([]string, error) {
-	log.WithField("envs", envs).Traceln("--> host.Host.getClientEnvs")
+func (host Host) getClientEnvs(conn net.Conn, envs ...string) ([]string, error) {
+	log.WithFields(log.Fields{
+		"conn": conn,
+		"envs": envs,
+	}).Traceln("--> host.Host.getClientEnvs")
 	var filledEnvs []string
 	for _, env := range envs {
-		value, err := host.requestClientEnv(env)
+		value, err := host.requestClientEnv(env, conn)
 		if err != nil {
 			return nil, err
 		}
@@ -140,12 +133,14 @@ func (host Host) getClientEnvs(envs ...string) ([]string, error) {
 	return filledEnvs, nil
 }
 
-func (host Host) requestClientEnv(env string) (string, error) {
-	log.WithField("env", env).Traceln("--> host.Host.requestClientEnv")
+func (host Host) requestClientEnv(env string, conn net.Conn) (string, error) {
+	log.WithFields(log.Fields{
+		"conn": conn,
+		"env":  env,
+	}).Traceln("--> host.Host.requestClientEnv")
 	log.WithField("env", env).Debugln("Requesting environment variable from client.")
-	println(host.conn)
-	bufIn := bufio.NewReader(host.conn)
-	_, err := fmt.Fprint(host.conn, connection.EnvPacket{Request: env}.String())
+	bufIn := bufio.NewReader(conn)
+	_, err := fmt.Fprint(conn, connection.EnvPacket{Request: env}.String())
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send packet.")
 		return "", err
@@ -160,9 +155,9 @@ func (host Host) requestClientEnv(env string) (string, error) {
 	return value, nil
 }
 
-func (host Host) stopTransfer() error {
-	log.Traceln("--> host.Host.stopTransfer")
-	_, err := fmt.Fprint(host.conn, connection.DonePacket{}.String())
+func (host Host) stopTransfer(conn net.Conn) error {
+	log.WithField("conn", conn).Traceln("--> host.Host.stopTransfer")
+	_, err := fmt.Fprint(conn, connection.DonePacket{}.String())
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send DonePacket.")
 		return err
