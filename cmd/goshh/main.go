@@ -6,7 +6,6 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/host"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
 	"net"
 	"os"
@@ -29,7 +28,7 @@ func main() {
 		"rAddr":      *rAddr,
 	}).Debugln("Parsed arguments.")
 
-	hst := host.NewHost(server.LoadConfig(*configPath))
+	hst := server.NewHost(server.LoadConfig(*configPath))
 	if err := hst.LoadCertKeyPair(*certFile, *keyFile); err != nil {
 		log.WithError(err).Fatalln("Failed to prepare hosting.")
 	}

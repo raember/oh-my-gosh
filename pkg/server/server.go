@@ -51,12 +51,12 @@ func (server Server) AwaitConnections(fdChan chan RemoteHandle) {
 			"maxSessions": maxSessions,
 		}).Debugln("Listening on socket.")
 	}
-
 	for {
 		socketFd, _, err := unix.Accept(fd)
 		if err != nil {
 			log.WithError(err).Fatalln("Failed opening connection.")
 		} else {
+			//TODO: Replace with unix.Getpeername()
 			rAddr := socket.GetPeerName(uintptr(socketFd))
 			log.WithFields(log.Fields{
 				"socketFd": socketFd,

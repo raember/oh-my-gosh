@@ -23,6 +23,8 @@ const (
 	DEFAULT_LOG_LEVEL = log.InfoLevel
 )
 
+//TODO: Use global loggers
+
 func init() {
 	log.SetLevel(getLogLevel())
 	log.SetFormatter(&log.TextFormatter{ForceColors: true})
