@@ -7,22 +7,24 @@ import (
 )
 
 const (
-	TCP               = "tcp"
-	TCP4              = "tcp4"
-	TCP6              = "tcp6"
-	UNIX              = "unix"
-	UNIXPACKET        = "unixpacket"
-	LOCALHOST         = "localhost"
-	PORT              = 2222
-	CLIENTNAME        = "gosh"
-	SERVERNAME        = "goshd"
-	CONFIGFORMAT      = "toml"
-	CERTFILE          = "/etc/gosh/certificate.pem"
-	KEYFILE           = "/etc/gosh/key.pem"
-	CONFIGPATH        = "/etc/gosh"
-	DEFAULT_LOG_LEVEL = log.InfoLevel
-	ENV_GOSH_USER     = "GOSH_USER"
-	ENV_GOSH_PASSWORD = "GOSH_PASSWORD"
+	TCP                 = "tcp"
+	TCP4                = "tcp4"
+	TCP6                = "tcp6"
+	UNIX                = "unix"
+	UNIXPACKET          = "unixpacket"
+	LOCALHOST           = "localhost"
+	PORT                = 2222
+	CLIENTNAME          = "gosh"
+	SERVERNAME          = "goshd"
+	CONFIGFORMAT        = "toml"
+	CERTFILE            = "/etc/gosh/certificate.pem"
+	KEYFILE             = "/etc/gosh/key.pem"
+	CONFIGPATH          = "/etc/gosh"
+	AUTHPATH            = "~/.gosh"
+	DEFAULT_LOG_LEVEL   = log.InfoLevel
+	ENV_GOSH_USER       = "GOSH_USER"
+	ENV_GOSH_PASSWORD   = "GOSH_PASSWORD"
+	ENV_GOSH_PUBLIC_KEY = "GOSH_PUBLIC_KEY"
 )
 
 //TODO: Use global loggers

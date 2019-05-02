@@ -10,16 +10,21 @@ import (
 	"os"
 )
 
-var configPath = flag.String("conf", common.CONFIGPATH, "LoadConfig path")
+var configPath = flag.String("conf", common.CONFIGPATH, "Config path.")
+var authPath = flag.String("auth", common.AUTHPATH, "Path of the public and private keys.")
 
 func main() {
 	log.Traceln("--> gosh.main")
 	flag.Parse()
 
-	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("LoadConfig path set.")
+	log.WithField("configPath", *configPath).Debugln("Config path set.")
+	log.WithField("authPath", *authPath).Debugln("Auth path set.")
 
 	clnt := client.NewClient(client.LoadConfig(*configPath))
 	if err := clnt.ParseArgument(flag.Arg(0)); err != nil {
+		os.Exit(1)
+	}
+	if err := clnt.Setup(); err != nil {
 		os.Exit(1)
 	}
 	conn, err := clnt.Dial()

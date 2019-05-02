@@ -184,5 +184,6 @@ func (client Client) Setup() error {
 			return err
 		}
 	}
+	//TODO: Load the public key and set it as environment variable.
 	return nil
 }
