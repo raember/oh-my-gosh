@@ -12,6 +12,7 @@ func setDefaults(config *viper.Viper) {
 	config.SetDefault("Client.Port", common.PORT)
 	config.SetDefault("Client.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
+	config.SetDefault("Authentication.KeyStore", "~/.gosh")
 }
 
 func LoadConfig(configpath string) *viper.Viper {

@@ -11,3 +11,6 @@ Protocol = "tcp"
 
 [Logging]
 LogLevel = "info"
+
+[Authentication]
+KeyStore = "~/.gosh"

@@ -12,6 +12,7 @@ func setDefaults(config *viper.Viper) {
 	config.SetDefault("Serve.Port", common.PORT)
 	config.SetDefault("Serve.Protocol", common.TCP)
 	config.SetDefault("Logging.LogLevel", "info")
+	config.SetDefault("Authentication.KeyStore", "~/.gosh/authorized_keys")
 	config.SetDefault("Authentication.LoginGraceTime", 120)
 	config.SetDefault("Authentication.PermitRootLogin", false)
 	config.SetDefault("Authentication.MaxTries", 6)

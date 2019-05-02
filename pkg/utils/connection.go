@@ -1,4 +1,4 @@
-package connection
+package utils
 
 import (
 	"bufio"
@@ -13,7 +13,7 @@ import (
 func ConnFromFd(fd uintptr, certificate *tls.Certificate) (net.Conn, error) {
 	log.WithFields(log.Fields{
 		"fd":          fd,
-		"certificate": certificate,
+		"certificate": &certificate,
 	}).Traceln("--> utils.ConnFromFd")
 	conn, err := net.FileConn(os.NewFile(fd, "conn"))
 	if err != nil {
@@ -43,7 +43,7 @@ func CloseFile(file *os.File) {
 }
 
 func CloseConn(conn net.Conn) {
-	log.WithField("conn", conn).Traceln("--> connection.CloseFile")
+	log.WithField("&conn", &conn).Traceln("--> connection.CloseFile")
 	if err := conn.Close(); err != nil {
 		log.WithError(err).Errorln("Failed to close connection.")
 	} else {

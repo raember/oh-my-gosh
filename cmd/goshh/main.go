@@ -14,6 +14,7 @@ import (
 func main() {
 	log.WithField("args", os.Args).Traceln("--> goshh.main")
 	configPath := flag.String("conf", common.CONFIGPATH, "Config path.")
+	authPath := flag.String("auth", common.AUTHKEYSPATH, "Authorized keys path.")
 	certFile := flag.String("cert", common.CERTFILE, "Certificate file.")
 	keyFile := flag.String("key", common.KEYFILE, "Key file.")
 	fd := flag.Uint("fd", 0, "The file descriptor for the connection.")
@@ -24,11 +25,15 @@ func main() {
 		"certFile":   *certFile,
 		"keyFile":    *keyFile,
 		"configPath": *configPath,
+		"authPath":   *authPath,
 		"fd":         *fd,
 		"rAddr":      *rAddr,
 	}).Debugln("Parsed arguments.")
 
-	hst := server.NewHost(server.LoadConfig(*configPath))
+	config := server.LoadConfig(*configPath)
+	config.Set("Authentication.KeyStore", *authPath)
+	hst := server.NewHost(config)
+
 	if err := hst.LoadCertKeyPair(*certFile, *keyFile); err != nil {
 		log.WithError(err).Fatalln("Failed to prepare hosting.")
 	}

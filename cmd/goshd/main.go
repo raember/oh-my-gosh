@@ -16,17 +16,22 @@ import (
 func main() {
 	log.WithField("args", os.Args).Traceln("--> goshd.main")
 	configPath := flag.String("conf", common.CONFIGPATH, "Config path.")
+	authPath := flag.String("auth", common.AUTHKEYSPATH, "Authorized keys path.")
 	certFile := flag.String("cert", common.CERTFILE, "Certificate file.")
 	keyFile := flag.String("key", common.KEYFILE, "Key file.")
 
 	flag.Parse()
 	log.WithFields(log.Fields{
 		"certFile":   *certFile,
+		"authPath":   *authPath,
 		"keyFile":    *keyFile,
 		"configPath": *configPath,
 	}).Debugln("Parsed arguments.")
 
-	srvr := server.NewServer(server.LoadConfig(*configPath))
+	config := server.LoadConfig(*configPath)
+	config.Set("Authentication.KeyStore", *authPath)
+	srvr := server.NewServer(config)
+
 	var children []uintptr
 	fdChan := make(chan server.RemoteHandle)
 	defer close(fdChan)
@@ -36,6 +41,7 @@ func main() {
 		bin := path.Join(path.Dir(os.Args[0]), "goshh")
 		args := []string{bin,
 			"--conf", *configPath,
+			"--auth", *authPath,
 			"--cert", *certFile,
 			"--key", *keyFile,
 			"--fd", strconv.FormatUint(uint64(remoteHandle.Fd), 10),

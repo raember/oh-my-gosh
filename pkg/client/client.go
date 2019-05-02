@@ -50,27 +50,36 @@ func (client Client) Dial() (net.Conn, error) {
 	return conn, nil
 }
 
-func PerformEnvTransfer(in io.Reader, out io.Writer) error {
+func (client Client) PerformTransfer(in io.Reader, out io.Writer) error {
 	log.WithFields(log.Fields{
 		"in":  &in,
 		"out": &out,
-	}).Traceln("--> client.PerformEnvTransfer")
+	}).Traceln("--> client.PerformTransfer")
 	bIn := bufio.NewReader(in)
 	for {
 		str, err := bIn.ReadString('\n')
 		if err != nil {
 			log.WithError(err).Errorln("Failed to read from server.")
 			return err
+		} else {
+			log.WithField("str", str).Debugln("Read a line from the server.")
 		}
-		pkg, err := connection.Parse(strings.TrimSpace(str))
+		packet, err := connection.Parse(strings.TrimSpace(str))
 		if err != nil {
 			log.WithError(err).Errorln("Failed to parse request.")
 			return err
 		}
-		if pkg.Done() {
+		if packet.Done() {
 			return nil
 		}
-		err = pkg.Ask(os.Stdin, out)
+		switch pckt := packet.(type) {
+		case connection.RsaPacket:
+			log.Debugln("Detected RSA packet.")
+			pckt.KeyPath = client.config.GetString("Authentication.KeyStore")
+			err = pckt.Ask(in, out)
+		default:
+			err = pckt.Ask(os.Stdin, out)
+		}
 		if err != nil {
 			log.WithError(err).Errorln("Failed to perform request.")
 			return err

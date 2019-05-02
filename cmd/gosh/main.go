@@ -5,22 +5,26 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/client"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
-	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/utils"
 	"golang.org/x/crypto/ssh/terminal"
 	"os"
 )
 
-var configPath = flag.String("conf", common.CONFIGPATH, "Config path.")
-var authPath = flag.String("auth", common.AUTHPATH, "Path of the public and private keys.")
-
 func main() {
-	log.Traceln("--> gosh.main")
+	log.WithField("args", os.Args).Traceln("--> gosh.main")
+	configPath := flag.String("conf", common.CONFIGPATH, "Config path.")
+	authPath := flag.String("auth", common.AUTHPATH, "Authorized keys path.")
+
 	flag.Parse()
+	log.WithFields(log.Fields{
+		"configPath": *configPath,
+		"authPath":   *authPath,
+	}).Debugln("Parsed arguments.")
 
-	log.WithField("configPath", *configPath).Debugln("Config path set.")
-	log.WithField("authPath", *authPath).Debugln("Auth path set.")
+	config := client.LoadConfig(*configPath)
+	config.Set("Authentication.KeyStore", *authPath)
+	clnt := client.NewClient(config)
 
-	clnt := client.NewClient(client.LoadConfig(*configPath))
 	if err := clnt.ParseArgument(flag.Arg(0)); err != nil {
 		os.Exit(1)
 	}
@@ -31,12 +35,12 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	defer connection.CloseConn(conn)
-	err = client.PerformEnvTransfer(conn, conn)
+	defer utils.CloseConn(conn)
+	err = clnt.PerformTransfer(conn, conn)
 	if err != nil {
 		os.Exit(1)
 	}
-	go connection.Forward(os.Stdin, conn, "stdin", "server")
+	go utils.Forward(os.Stdin, conn, "stdin", "server")
 	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		log.WithError(err).Fatalln("Failed to set terminal into raw mode.")
@@ -50,7 +54,7 @@ func main() {
 		}
 	}()
 
-	connection.Forward(conn, os.Stdout, "server", "stdout")
+	utils.Forward(conn, os.Stdout, "server", "stdout")
 }
 
 func init() {

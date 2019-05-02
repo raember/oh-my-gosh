@@ -2,17 +2,24 @@ package server
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/passwd"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/utils"
 	"golang.org/x/sys/unix"
 	"net"
+	"net/url"
 	"os"
+	"os/exec"
+	"path"
 	"strings"
 	"syscall"
 )
@@ -20,7 +27,7 @@ import (
 type Host struct {
 	config      *viper.Viper
 	certificate *tls.Certificate
-	conn        *net.Conn
+	conn        net.Conn
 	rAddr       *net.TCPAddr
 	userEnvs    []string
 	userName    string
@@ -28,7 +35,6 @@ type Host struct {
 	rTerm       string
 	rUser       string
 	rHostname   string
-	rUserPubKey string
 	ptm         *os.File
 	pts         *os.File
 }
@@ -62,7 +68,7 @@ func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 	}).Traceln("--> host.Host.Connect")
 	ErrorMsg := "Failed to handle connection."
 
-	conn, err := connection.ConnFromFd(socketFd, host.certificate)
+	conn, err := utils.ConnFromFd(socketFd, host.certificate)
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
@@ -71,7 +77,7 @@ func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 		"conn":  conn,
 		"rAddr": *rAddr,
 	}).Infoln("Connected to client.")
-	host.conn = &conn
+	host.conn = conn
 	host.rAddr = rAddr
 	return nil
 }
@@ -113,20 +119,9 @@ func (host *Host) Setup() error {
 	} else {
 		log.WithField("userPw", host.userPw).Debugln("Got local user password.")
 	}
-	host.rUserPubKey, err = host.requestClientEnv(common.ENV_GOSH_PUBLIC_KEY)
-	if err != nil {
-		log.WithError(err).Errorln(ErrorMsg)
-		return err
-	} else {
-		log.WithField("rUserPubKey", host.rUserPubKey).Debugln("Got remote user public key.")
-	}
 
 	// Done gathering all the information.
 	log.Infoln("Got all the information from the client.")
-	if err = host.stopTransfer(); err != nil {
-		log.WithError(err).Errorln(ErrorMsg)
-		return err
-	}
 
 	host.ptm, host.pts, err = pty.Create()
 	if err != nil {
@@ -139,27 +134,29 @@ func (host *Host) Setup() error {
 
 func (host *Host) Serve() error {
 	log.Traceln("--> host.Host.Serve")
-	ErrorMsg := "Failed to serve."
-	var pid int
+	var cmd *exec.Cmd
 	var err error
-	if host.rUserPubKey != "" {
-		pid, err = host.loginWithKey()
+	// Try login with keys first:
+	err = host.authenticateWithKeys()
+	if err != nil {
+		log.WithError(err).Infoln("Failed to log in user with keys. Proceed to login command.")
+		cmd, err = host.login()
 	} else {
-		pid, err = host.login()
+		cmd, err = host.loginWithKey()
 	}
 	if err != nil {
-		log.WithError(err).Errorln(ErrorMsg)
+		log.WithError(err).WithField("cmd", cmd).Errorln("Failed to drop user into a shell.")
 		return err
 	}
 
 	// TODO: Handle forwarding yourself.
-	go connection.Forward(host.ptm, *host.conn, "ptm", "client")
-	go connection.Forward(*host.conn, host.ptm, "client", "ptm")
+	go utils.Forward(host.ptm, host.conn, "ptm", "client")
+	go utils.Forward(host.conn, host.ptm, "client", "ptm")
 
 	//rFdSet := unix.FdSet{}
 	//n, err := unix.Pselect(3, &rFdSet, &rFdSet, &rFdSet, nil, nil)
 
-	wpid, err := syscall.Wait4(pid, nil, 0, nil)
+	wpid, err := syscall.Wait4(cmd.Process.Pid, nil, 0, nil)
 	if err != nil {
 		log.WithError(err).Errorln("Failed waiting for login.")
 		return err
@@ -167,9 +164,9 @@ func (host *Host) Serve() error {
 		log.WithField("wpid", wpid).Debugln("Waited for login.")
 	}
 	// TODO: Fix breakdown of connection and files.
-	connection.CloseFile(host.pts)
-	connection.CloseFile(host.ptm)
-	connection.CloseConn(*host.conn)
+	utils.CloseFile(host.pts)
+	utils.CloseFile(host.ptm)
+	utils.CloseConn(host.conn)
 	return nil
 }
 
@@ -190,8 +187,8 @@ func (host *Host) getClientEnvs(envs ...string) error {
 func (host Host) requestClientEnv(env string) (string, error) {
 	log.WithField("env", env).Traceln("--> host.Host.requestClientEnv")
 	log.WithField("env", env).Debugln("Requesting environment variable from client.")
-	bufIn := bufio.NewReader(*host.conn)
-	_, err := fmt.Fprint(*host.conn, connection.EnvPacket{Request: env}.String())
+	bufIn := bufio.NewReader(host.conn)
+	_, err := fmt.Fprint(host.conn, connection.EnvPacket{Request: env}.String())
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send packet.")
 		return "", err
@@ -206,9 +203,9 @@ func (host Host) requestClientEnv(env string) (string, error) {
 	return value, nil
 }
 
-func (host Host) stopTransfer() error {
+func (host Host) stopTransfer(success bool) error {
 	log.Traceln("--> host.Host.stopTransfer")
-	_, err := fmt.Fprint(*host.conn, connection.DonePacket{}.String())
+	_, err := fmt.Fprint(host.conn, connection.DonePacket{Success: success}.String())
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send DonePacket.")
 		return err
@@ -217,41 +214,158 @@ func (host Host) stopTransfer() error {
 	return nil
 }
 
-func (host Host) loginWithKey() (int, error) {
-	log.Traceln("--> server.Host.loginWithKey")
-	return 0, errors.New("not implemented yet")
+func (host Host) authenticateWithKeys() error {
+	log.Traceln("--> server.Host.authenticateWithKeys")
+	ErrorMsg := "Failed login with key."
+	success := false
+	defer func() {
+		if err := host.stopTransfer(success); err != nil {
+			log.WithError(err).Errorln("Failed to notice the client.")
+		}
+	}()
+	filename := url.PathEscape(host.rUser) + ".pub"
+	keyStorePath := host.config.GetString("Authentication.KeyStore")
+	pubKey, err := utils.PubKeyFromFile(path.Join(keyStorePath, filename))
+	if err != nil {
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
+	}
+	secret, nSecret, err := utils.CreateSecret()
+	if err != nil {
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
+	}
+	encryptedSecret, err := rsa.EncryptPKCS1v15(rand.Reader, pubKey, secret[:nSecret])
+	if err != nil {
+		log.WithError(err).Errorln("Failed to encrypt secret.")
+		return err
+	} else {
+		log.WithField("encryptedSecret", string(encryptedSecret)).Infoln("Encrypted secret. Sending to client.")
+	}
+
+	_, err = host.conn.Write([]byte(connection.RsaPacket{EncryptedSecret: encryptedSecret, EncryptedSecretN: len(encryptedSecret)}.String()))
+	if err != nil {
+		log.WithError(err).Errorln("Failed to send RSA packet.")
+		return err
+	}
+	_, err = host.conn.Write(encryptedSecret)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to send encrypted secret.")
+		return err
+	}
+
+	answer := make([]byte, common.SECRET_LENGTH)
+	nAnswer, err := host.conn.Read(answer)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to receive decrypted answer.")
+		return err
+	}
+	if nAnswer != nSecret || !bytes.Equal(secret[:nSecret], answer[:nAnswer]) {
+		log.WithError(err).Errorln("The answer does not match the secret.")
+		return err
+	} else {
+		log.Infoln("Client authenticated itself using keys.")
+		success = true
+
+	}
+	return nil
 }
 
-func (host Host) login() (int, error) {
+func (host Host) loginWithKey() (*exec.Cmd, error) {
+	log.Traceln("--> server.Host.loginWithKey")
+	pwd, err := passwd.GetPwByName(host.userName)
+	if err != nil {
+		log.WithError(err).Errorln("Failed to log in with keys.")
+		return nil, err
+	}
+	//TODO: Make entry in utmx
+	//TODO: Display MOTD
+	//if err := dropPrivilege(pwd); err != nil {
+	//	log.WithError(err).Errorln("Failed to log in with keys.")
+	//	return nil, err
+	//}
+
+	shell := exec.Command(pwd.Shell, "--login")
+	shell.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+		//Setctty: true, //TODO: Fix error when using ctty
+		Credential: &syscall.Credential{
+			Uid: pwd.Uid,
+			Gid: pwd.Gid,
+		},
+	}
+	shell.Dir = pwd.HomeDir
+	shell.Env = host.userEnvs
+	shell.Stdin = host.pts
+	shell.Stdout = host.pts
+	shell.Stderr = host.pts
+	err = shell.Start()
+	if err != nil {
+		log.WithError(err).Errorln("Failed to fork shell.")
+	} else {
+		log.WithField("shell", shell).Debugln("Forked shell.")
+	}
+	return shell, err
+}
+
+//TODO: Fix "operation not supported" error
+func dropPrivilege(pwd *passwd.PassWd) error {
+	log.Traceln("--> server.dropPrivilege")
+	if err := unix.Setuid(int(pwd.Uid)); err != nil {
+		log.WithError(err).Errorln("Failed to set UID.")
+		return err
+	} else {
+		log.WithField("uid", pwd.Uid).Infoln("Dropped user privilege.")
+	}
+	if err := unix.Setgid(int(pwd.Gid)); err != nil {
+		log.WithError(err).Errorln("Failed to set UID.")
+		return err
+	} else {
+		log.WithField("gid", pwd.Gid).Infoln("Dropped group privilege.")
+	}
+	return nil
+}
+
+func (host Host) login() (*exec.Cmd, error) {
 	log.Traceln("--> server.Host.login")
-	pid, err := syscall.ForkExec("/bin/login", []string{"-h", host.rHostname}, &syscall.ProcAttr{
-		Files: []uintptr{
-			host.pts.Fd(),
-			host.pts.Fd(),
-			host.pts.Fd(),
-		},
-		Env: host.userEnvs,
-		Sys: &syscall.SysProcAttr{
-			Setsid:  true,
-			Setctty: true,
-		},
-	})
+	login := exec.Command("/bin/login", "-h", "host.rHostname")
+	login.Stdin = host.pts
+	login.Stdout = host.pts
+	login.Stderr = host.pts
+	login.Env = host.userEnvs
+	login.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+	}
+	//pid, err := syscall.ForkExec("/bin/login", []string{"-h", host.rHostname}, &syscall.ProcAttr{
+	//	Files: []uintptr{
+	//		host.pts.Fd(),
+	//		host.pts.Fd(),
+	//		host.pts.Fd(),
+	//	},
+	//	Env: host.userEnvs,
+	//	Sys: &syscall.SysProcAttr{
+	//		Setsid:  true,
+	//		Setctty: true,
+	//	},
+	//})
+	err := login.Start()
 	if err != nil {
 		log.WithError(err).Errorln("Failed to fork login.")
 	} else {
-		log.WithField("pid", pid).Debugln("Forked login.")
+		log.WithField("login", login).Debugln("Forked login.")
 	}
 	if host.userName != "" {
-		if err := host.answerPtyLoginRequest(pid); err != nil {
-			return pid, err
+		if err := host.answerPtyLoginRequest(login.Process.Pid); err != nil {
+			return login, err
 		}
 		if host.userPw != "" {
-			if err := host.answerPtyPasswordRequest(pid); err != nil {
-				return pid, err
+			if err := host.answerPtyPasswordRequest(login.Process.Pid); err != nil {
+				return login, err
 			}
 		}
 	}
-	return pid, err
+	return login, err
 }
 
 func interrupt(pid int) error {
