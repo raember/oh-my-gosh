@@ -14,7 +14,7 @@ func setDefaults(config *viper.Viper) {
 	config.SetDefault("Logging.LogLevel", "info")
 }
 
-func Config(configpath string) *viper.Viper {
+func LoadConfig(configpath string) *viper.Viper {
 	log.WithField("configpath", configpath).Traceln("--> client.LoadConfig")
 	config := viper.New()
 	config.SetConfigName(common.CLIENTNAME + "_config")
@@ -32,7 +32,7 @@ func Config(configpath string) *viper.Viper {
 	config.OnConfigChange(func(e fsnotify.Event) {
 		log.WithFields(log.Fields{
 			"name": e.Name,
-		}).Warnln("Config file changed.")
+		}).Warnln("LoadConfig file changed.")
 	})
 	return config
 }

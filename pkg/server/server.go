@@ -56,7 +56,6 @@ func (server Server) AwaitConnections(fdChan chan RemoteHandle) {
 		if err != nil {
 			log.WithError(err).Fatalln("Failed opening connection.")
 		} else {
-			//TODO: Replace with unix.Getpeername()
 			rAddr := socket.GetPeerName(uintptr(socketFd))
 			log.WithFields(log.Fields{
 				"socketFd": socketFd,

@@ -10,29 +10,16 @@ import (
 	"os"
 )
 
-var configPath = flag.String("conf", common.CONFIGPATH, "Config path")
+var configPath = flag.String("conf", common.CONFIGPATH, "LoadConfig path")
 
 func main() {
 	log.Traceln("--> gosh.main")
 	flag.Parse()
-	address := flag.Arg(0)
-	if address == "" {
-		address = common.LOCALHOST
-	}
-	username := ""
-	err := os.Setenv("GOSH_USER", username)
-	if err != nil {
-		log.WithError(err).Fatalln("Failed to set GOSH_USER.")
-	}
-	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("Config path set.")
-	log.WithFields(log.Fields{"address": address}).Debugln("Host address set.")
-	config := client.Config(*configPath)
-	clnt, err := client.NewClient(
-		config.GetString("Client.Protocol"),
-		address,
-		config.GetInt("Client.Port"),
-	)
-	if err != nil {
+
+	log.WithFields(log.Fields{"configPath": *configPath}).Debugln("LoadConfig path set.")
+
+	clnt := client.NewClient(client.LoadConfig(*configPath))
+	if err := clnt.ParseArgument(flag.Arg(0)); err != nil {
 		os.Exit(1)
 	}
 	conn, err := clnt.Dial()
@@ -45,7 +32,6 @@ func main() {
 		os.Exit(1)
 	}
 	go connection.Forward(os.Stdin, conn, "stdin", "server")
-	//go connection.Forward(conn, os.Stdout, "server", "stdout")
 	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		log.WithError(err).Fatalln("Failed to set terminal into raw mode.")

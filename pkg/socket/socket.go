@@ -2,6 +2,7 @@ package socket
 
 /*
 #include <sys/socket.h>
+#include <arpa/inet.h>
 
 struct sockaddr_in go_getpeername(int socket) {
 	struct sockaddr address;

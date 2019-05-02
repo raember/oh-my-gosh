@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/connection"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
 	"net"
@@ -63,12 +64,12 @@ func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 	return nil
 }
 
-func (host Host) Serve() error {
+func (host *Host) Serve() error {
 	log.Traceln("--> host.Host.Serve")
 	ErrorMsg := "Failed to handle connection."
 
-	// Get the necessary information from the remote client
-	remote := host.rAddr.IP.String()
+	// Get the necessary information from the rHost client
+	rHost := host.rAddr.IP.String()
 	envs, err := host.getClientEnvs("TERM")
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
@@ -79,23 +80,35 @@ func (host Host) Serve() error {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
-	username, err := host.requestClientEnv("GOSH_USER")
+	rHostname, err := host.requestClientEnv("HOSTNAME")
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
-	if err = host.stopTransfer(); err != nil {
+	username, err := host.requestClientEnv(common.ENV_GOSH_USER)
+	if err != nil {
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
+	}
+	password, err := host.requestClientEnv(common.ENV_GOSH_PASSWORD)
+	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	}
 
 	// Done gathering all the information.
 	log.WithFields(log.Fields{
-		"envs":     envs,
-		"rUser":    rUser,
-		"username": username,
-		"remote":   remote,
+		"envs":      envs,
+		"rUser":     rUser,
+		"username":  username,
+		"password":  password,
+		"rHost":     rHost,
+		"rHostname": rHostname,
 	}).Infoln("Got all the information from the client.")
+	if err = host.stopTransfer(); err != nil {
+		log.WithError(err).Errorln(ErrorMsg)
+		return err
+	}
 
 	ptm, pts, err := pty.Create()
 	if err != nil {
@@ -103,7 +116,7 @@ func (host Host) Serve() error {
 		return err
 	}
 
-	pid, err := syscall.ForkExec("/bin/login", []string{"-h", remote}, &syscall.ProcAttr{
+	pid, err := syscall.ForkExec("/bin/login", []string{"-h", rHost}, &syscall.ProcAttr{
 		Files: []uintptr{
 			pts.Fd(),
 			pts.Fd(),

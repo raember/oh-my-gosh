@@ -21,6 +21,8 @@ const (
 	KEYFILE           = "/etc/gosh/key.pem"
 	CONFIGPATH        = "/etc/gosh"
 	DEFAULT_LOG_LEVEL = log.InfoLevel
+	ENV_GOSH_USER     = "GOSH_USER"
+	ENV_GOSH_PASSWORD = "GOSH_PASSWORD"
 )
 
 //TODO: Use global loggers
