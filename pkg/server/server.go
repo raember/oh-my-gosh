@@ -52,11 +52,11 @@ func (server Server) AwaitConnections(fdChan chan RemoteHandle) {
 		}).Debugln("Listening on socket.")
 	}
 	for {
-		socketFd, _, err := unix.Accept(fd)
+		socketFd, _, err := unix.Accept(fd) // Can't use peer Sockaddr because Go...
 		if err != nil {
 			log.WithError(err).Fatalln("Failed opening connection.")
 		} else {
-			rAddr := socket.GetPeerName(uintptr(socketFd))
+			rAddr := socket.GetPeerName(uintptr(socketFd)) // Can't use unix.Getpeername - Fix for unusable Sockaddr.
 			log.WithFields(log.Fields{
 				"socketFd": socketFd,
 				"rAddr":    rAddr,

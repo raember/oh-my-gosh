@@ -39,6 +39,9 @@ func main() {
 	if err := hst.Connect(uintptr(*fd), peerAddr); err != nil {
 		log.WithError(err).Fatalln("Failed to prepare hosting.")
 	}
+	if err := hst.Setup(); err != nil {
+		log.WithError(err).Fatalln("Failed to setup host.")
+	}
 	if err := hst.Serve(); err != nil {
 		log.WithError(err).Fatalln("Hosting exited with an error.")
 	}
