@@ -64,7 +64,7 @@ func (host *Host) LoadCertKeyPair(certPath string, keyFilePath string) error {
 func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 	log.WithFields(log.Fields{
 		"socketFd": socketFd,
-		"rAddr":    *rAddr,
+		"rAddr":    rAddr.String(),
 	}).Traceln("--> host.Host.Connect")
 	ErrorMsg := "Failed to handle connection."
 
@@ -75,7 +75,7 @@ func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 	}
 	log.WithFields(log.Fields{
 		"conn":  conn,
-		"rAddr": *rAddr,
+		"rAddr": rAddr.String(),
 	}).Infoln("Connected to client.")
 	host.conn = conn
 	host.rAddr = rAddr
@@ -103,6 +103,20 @@ func (host *Host) Setup() error {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
 	} else {
+		if host.rHostname == "" {
+			log.Warnln("Client HOSTNAME was empty. Trying NAME next.")
+			host.rHostname, err = host.requestClientEnv("NAME")
+			if err != nil {
+				log.WithError(err).Errorln(ErrorMsg)
+				return err
+			} else {
+				if host.rHostname == "" {
+					log.Warnln("Client NAME was empty. Using IP address instead.")
+					host.rHostname = strings.Split(host.rAddr.String(), ":")[0]
+				}
+				log.WithField("rHostname", host.rHostname).Debugln("Got remote host name.")
+			}
+		}
 		log.WithField("rHostname", host.rHostname).Debugln("Got remote host name.")
 	}
 	host.userName, err = host.requestClientEnv(common.ENV_GOSH_USER)
@@ -134,20 +148,15 @@ func (host *Host) Setup() error {
 
 func (host *Host) Serve() error {
 	log.Traceln("--> host.Host.Serve")
-	var cmd *exec.Cmd
-	var err error
-	// Try login with keys first:
-	err = host.authenticateWithKeys()
+	cmd, err := host.StartShell()
 	if err != nil {
-		log.WithError(err).Infoln("Failed to log in user with keys. Proceed to login command.")
-		cmd, err = host.login()
-	} else {
-		cmd, err = host.loginWithKey()
+		log.WithError(err).Errorln("Failed to serve client.")
 	}
-	if err != nil {
-		log.WithError(err).WithField("cmd", cmd).Errorln("Failed to drop user into a shell.")
-		return err
-	}
+	defer func() {
+		utils.CloseFile(host.pts)
+		utils.CloseFile(host.ptm)
+		utils.CloseConn(host.conn)
+	}()
 
 	// TODO: Handle forwarding yourself.
 	go utils.Forward(host.ptm, host.conn, "ptm", "client")
@@ -163,11 +172,43 @@ func (host *Host) Serve() error {
 	} else {
 		log.WithField("wpid", wpid).Debugln("Waited for login.")
 	}
-	// TODO: Fix breakdown of connection and files.
-	utils.CloseFile(host.pts)
-	utils.CloseFile(host.ptm)
-	utils.CloseConn(host.conn)
 	return nil
+}
+
+func (host *Host) StartShell() (cmd *exec.Cmd, err error) {
+	log.Traceln("--> host.Host.StartShell")
+	ErrorMsg := "Failed to start shell."
+	if host.userName != "" {
+		err = host.authenticateWithKeys(host.userName)
+		if err != nil {
+			log.WithError(err).Infoln("Failed to log in user with keys. Proceed to login command.")
+			err = host.stopTransfer(true)
+			if err == nil {
+				cmd, err = host.login()
+			}
+		} else {
+			pwd, err := passwd.GetPwByName(host.userName)
+			if err != nil {
+				log.WithError(err).Errorln("Failed to log in with keys.")
+			} else {
+				err = host.stopTransfer(true)
+				if err == nil {
+					//TODO: Make entry in utmx
+					//TODO: Display MOTD
+					cmd, err = host.spawnShell(pwd)
+				}
+			}
+		}
+	} else {
+		err = host.stopTransfer(true)
+		if err == nil {
+			cmd, err = host.login()
+		}
+	}
+	if err != nil {
+		log.WithError(err).WithField("cmd", cmd).Errorln(ErrorMsg)
+	}
+	return
 }
 
 func (host *Host) getClientEnvs(envs ...string) error {
@@ -214,18 +255,16 @@ func (host Host) stopTransfer(success bool) error {
 	return nil
 }
 
-func (host Host) authenticateWithKeys() error {
-	log.Traceln("--> server.Host.authenticateWithKeys")
+func (host Host) authenticateWithKeys(user string) error {
+	log.WithField("user", user).Traceln("--> server.Host.authenticateWithKeys")
 	ErrorMsg := "Failed login with key."
-	success := false
-	defer func() {
-		if err := host.stopTransfer(success); err != nil {
-			log.WithError(err).Errorln("Failed to notice the client.")
-		}
-	}()
 	filename := url.PathEscape(host.rUser) + ".pub"
-	keyStorePath := host.config.GetString("Authentication.KeyStore")
-	pubKey, err := utils.PubKeyFromFile(path.Join(keyStorePath, filename))
+	keyStorePath := path.Join(host.config.GetString("Authentication.KeyStore"), common.AUTHKEYSDIR, user, filename)
+	if _, err := os.Stat(keyStorePath); os.IsNotExist(err) {
+		log.WithError(err).Warnln("Failed to locate public key file.")
+		return err
+	}
+	pubKey, err := utils.PubKeyFromFile(keyStorePath)
 	if err != nil {
 		log.WithError(err).Errorln(ErrorMsg)
 		return err
@@ -265,26 +304,13 @@ func (host Host) authenticateWithKeys() error {
 		return err
 	} else {
 		log.Infoln("Client authenticated itself using keys.")
-		success = true
 
 	}
 	return nil
 }
 
-func (host Host) loginWithKey() (*exec.Cmd, error) {
-	log.Traceln("--> server.Host.loginWithKey")
-	pwd, err := passwd.GetPwByName(host.userName)
-	if err != nil {
-		log.WithError(err).Errorln("Failed to log in with keys.")
-		return nil, err
-	}
-	//TODO: Make entry in utmx
-	//TODO: Display MOTD
-	//if err := dropPrivilege(pwd); err != nil {
-	//	log.WithError(err).Errorln("Failed to log in with keys.")
-	//	return nil, err
-	//}
-
+func (host Host) spawnShell(pwd *passwd.PassWd) (*exec.Cmd, error) {
+	log.Traceln("--> server.Host.spawnShell")
 	shell := exec.Command(pwd.Shell, "--login")
 	shell.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
@@ -299,7 +325,7 @@ func (host Host) loginWithKey() (*exec.Cmd, error) {
 	shell.Stdin = host.pts
 	shell.Stdout = host.pts
 	shell.Stderr = host.pts
-	err = shell.Start()
+	err := shell.Start()
 	if err != nil {
 		log.WithError(err).Errorln("Failed to fork shell.")
 	} else {
@@ -308,7 +334,7 @@ func (host Host) loginWithKey() (*exec.Cmd, error) {
 	return shell, err
 }
 
-//TODO: Fix "operation not supported" error
+//TODO: Fix "operation not supported" error or drop this function
 func dropPrivilege(pwd *passwd.PassWd) error {
 	log.Traceln("--> server.dropPrivilege")
 	if err := unix.Setuid(int(pwd.Uid)); err != nil {
@@ -328,7 +354,7 @@ func dropPrivilege(pwd *passwd.PassWd) error {
 
 func (host Host) login() (*exec.Cmd, error) {
 	log.Traceln("--> server.Host.login")
-	login := exec.Command("/bin/login", "-h", "host.rHostname")
+	login := exec.Command("/bin/login", "-h", host.rHostname)
 	login.Stdin = host.pts
 	login.Stdout = host.pts
 	login.Stderr = host.pts
@@ -337,18 +363,6 @@ func (host Host) login() (*exec.Cmd, error) {
 		Setsid:  true,
 		Setctty: true,
 	}
-	//pid, err := syscall.ForkExec("/bin/login", []string{"-h", host.rHostname}, &syscall.ProcAttr{
-	//	Files: []uintptr{
-	//		host.pts.Fd(),
-	//		host.pts.Fd(),
-	//		host.pts.Fd(),
-	//	},
-	//	Env: host.userEnvs,
-	//	Sys: &syscall.SysProcAttr{
-	//		Setsid:  true,
-	//		Setctty: true,
-	//	},
-	//})
 	err := login.Start()
 	if err != nil {
 		log.WithError(err).Errorln("Failed to fork login.")

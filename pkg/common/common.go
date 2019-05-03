@@ -21,7 +21,7 @@ const (
 	KEYFILE           = "/etc/gosh/key.pem"
 	CONFIGPATH        = "/etc/gosh"
 	AUTHPATH          = "~/.gosh"
-	AUTHKEYSPATH      = "~/.gosh/authorized_keys"
+	AUTHKEYSDIR       = "authorized_keys"
 	SECRET_LENGTH     = 64
 	DEFAULT_LOG_LEVEL = log.InfoLevel
 	ENV_GOSH_USER     = "GOSH_USER"

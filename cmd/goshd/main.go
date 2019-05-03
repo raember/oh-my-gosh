@@ -16,7 +16,7 @@ import (
 func main() {
 	log.WithField("args", os.Args).Traceln("--> goshd.main")
 	configPath := flag.String("conf", common.CONFIGPATH, "Config path.")
-	authPath := flag.String("auth", common.AUTHKEYSPATH, "Authorized keys path.")
+	authPath := flag.String("auth", common.AUTHPATH, "Authorized keys path.")
 	certFile := flag.String("cert", common.CERTFILE, "Certificate file.")
 	keyFile := flag.String("key", common.KEYFILE, "Key file.")
 

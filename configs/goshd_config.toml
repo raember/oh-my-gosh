@@ -14,7 +14,7 @@ MaxSessions = 10
 LogLevel = "info"
 
 [Authentication]
-KeyStore = "~/.gosh/authorized_keys"
+KeyStore = "~/.gosh"
 LoginGraceTime = 120
 PermitRootLogin = false
 MaxTries = 3
