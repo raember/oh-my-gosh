@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -14,7 +15,6 @@ import (
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/passwd"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/pty"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/utils"
-	"golang.org/x/sys/unix"
 	"net"
 	"net/url"
 	"os"
@@ -37,6 +37,7 @@ type Host struct {
 	rHostname   string
 	ptm         *os.File
 	pts         *os.File
+	shell       *exec.Cmd
 }
 
 func NewHost(config *viper.Viper) Host {
@@ -74,7 +75,7 @@ func (host *Host) Connect(socketFd uintptr, rAddr *net.TCPAddr) error {
 		return err
 	}
 	log.WithFields(log.Fields{
-		"conn":  conn,
+		"&conn": &conn,
 		"rAddr": rAddr.String(),
 	}).Infoln("Connected to client.")
 	host.conn = conn
@@ -151,6 +152,7 @@ func (host *Host) Serve() error {
 	cmd, err := host.StartShell()
 	if err != nil {
 		log.WithError(err).Errorln("Failed to serve client.")
+		return err
 	}
 	defer func() {
 		utils.CloseFile(host.pts)
@@ -165,12 +167,12 @@ func (host *Host) Serve() error {
 	//rFdSet := unix.FdSet{}
 	//n, err := unix.Pselect(3, &rFdSet, &rFdSet, &rFdSet, nil, nil)
 
-	wpid, err := syscall.Wait4(cmd.Process.Pid, nil, 0, nil)
+	status, err := cmd.Process.Wait()
 	if err != nil {
 		log.WithError(err).Errorln("Failed waiting for login.")
 		return err
 	} else {
-		log.WithField("wpid", wpid).Debugln("Waited for login.")
+		log.WithField("status", status).Debugln("Waited for login.")
 	}
 	return nil
 }
@@ -207,6 +209,8 @@ func (host *Host) StartShell() (cmd *exec.Cmd, err error) {
 	}
 	if err != nil {
 		log.WithError(err).WithField("cmd", cmd).Errorln(ErrorMsg)
+	} else {
+		log.WithField("cmd", cmd).Infoln("Started shell.")
 	}
 	return
 }
@@ -279,7 +283,7 @@ func (host Host) authenticateWithKeys(user string) error {
 		log.WithError(err).Errorln("Failed to encrypt secret.")
 		return err
 	} else {
-		log.WithField("encryptedSecret", string(encryptedSecret)).Infoln("Encrypted secret. Sending to client.")
+		log.WithField("encryptedSecret", string(encryptedSecret[:16])+"...").Infoln("Encrypted secret. Sending to client.")
 	}
 
 	_, err = host.conn.Write([]byte(connection.RsaPacket{EncryptedSecret: encryptedSecret, EncryptedSecretN: len(encryptedSecret)}.String()))
@@ -309,7 +313,7 @@ func (host Host) authenticateWithKeys(user string) error {
 	return nil
 }
 
-func (host Host) spawnShell(pwd *passwd.PassWd) (*exec.Cmd, error) {
+func (host *Host) spawnShell(pwd *passwd.PassWd) (*exec.Cmd, error) {
 	log.Traceln("--> server.Host.spawnShell")
 	shell := exec.Command(pwd.Shell, "--login")
 	shell.SysProcAttr = &syscall.SysProcAttr{
@@ -329,30 +333,13 @@ func (host Host) spawnShell(pwd *passwd.PassWd) (*exec.Cmd, error) {
 	if err != nil {
 		log.WithError(err).Errorln("Failed to fork shell.")
 	} else {
+		host.shell = shell
 		log.WithField("shell", shell).Debugln("Forked shell.")
 	}
 	return shell, err
 }
 
-//TODO: Fix "operation not supported" error or drop this function
-func dropPrivilege(pwd *passwd.PassWd) error {
-	log.Traceln("--> server.dropPrivilege")
-	if err := unix.Setuid(int(pwd.Uid)); err != nil {
-		log.WithError(err).Errorln("Failed to set UID.")
-		return err
-	} else {
-		log.WithField("uid", pwd.Uid).Infoln("Dropped user privilege.")
-	}
-	if err := unix.Setgid(int(pwd.Gid)); err != nil {
-		log.WithError(err).Errorln("Failed to set UID.")
-		return err
-	} else {
-		log.WithField("gid", pwd.Gid).Infoln("Dropped group privilege.")
-	}
-	return nil
-}
-
-func (host Host) login() (*exec.Cmd, error) {
+func (host *Host) login() (*exec.Cmd, error) {
 	log.Traceln("--> server.Host.login")
 	login := exec.Command("/bin/login", "-h", host.rHostname)
 	login.Stdin = host.pts
@@ -367,6 +354,7 @@ func (host Host) login() (*exec.Cmd, error) {
 	if err != nil {
 		log.WithError(err).Errorln("Failed to fork login.")
 	} else {
+		host.shell = login
 		log.WithField("login", login).Debugln("Forked login.")
 	}
 	if host.userName != "" {
@@ -382,54 +370,57 @@ func (host Host) login() (*exec.Cmd, error) {
 	return login, err
 }
 
-func interrupt(pid int) error {
-	err := unix.Kill(pid, unix.SIGINT)
-	if err != nil {
-		log.WithError(err).Errorln("Failed to interrupt process.")
-		err = unix.Kill(pid, unix.SIGKILL)
-		if err != nil {
-			log.WithError(err).Errorln("Failed to kill process.")
-		} else {
-			log.WithField("pid", pid).Infoln("Killed process.")
-		}
-	} else {
-		log.WithField("pid", pid).Infoln("Interrupted process.")
-	}
-	return err
-}
-
-func (host Host) answerPtyLoginRequest(pid int) error {
+func (host *Host) answerPtyLoginRequest(pid int) error {
 	log.WithField("pid", pid).Traceln("--> server.Host.answerPtyLoginRequest")
 	str, err := bufio.NewReader(host.ptm).ReadString(':')
 	if err != nil || !strings.HasSuffix(str, "login:") {
 		log.WithError(err).WithField("str", str).Errorln("Failed to read 'login:' from pty")
-		_ = interrupt(pid)
+		if err := host.Kill(); err != nil {
+			log.WithError(err).Warnln("Failed to kill shell.")
+		}
 		return err
 	}
 	_, err = host.ptm.WriteString(host.userName + "\n")
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send user name to pty.")
-		_ = interrupt(pid)
+		if err := host.Kill(); err != nil {
+			log.WithError(err).Warnln("Failed to kill shell.")
+		}
 		return err
 	}
 	log.Infoln("Sent user name to process")
 	return nil
 }
 
-func (host Host) answerPtyPasswordRequest(pid int) error {
+func (host *Host) answerPtyPasswordRequest(pid int) error {
 	log.WithField("pid", pid).Traceln("--> server.Host.answerPtyPasswordRequest")
 	str, err := bufio.NewReader(host.ptm).ReadString(':')
 	if err != nil || !strings.HasSuffix(str, "Password:") {
 		log.WithError(err).WithField("str", str).Errorln("Failed to read 'Password:' from pty")
-		_ = interrupt(pid)
+		if err := host.Kill(); err != nil {
+			log.WithError(err).Warnln("Failed to kill shell.")
+		}
 		return err
 	}
 	_, err = host.ptm.WriteString(host.userPw + "\n")
 	if err != nil {
 		log.WithError(err).Errorln("Failed to send password to pty.")
-		_ = interrupt(pid)
+		if err := host.Kill(); err != nil {
+			log.WithError(err).Warnln("Failed to kill shell.")
+		}
 		return err
 	}
 	log.Infoln("Sent password to process")
 	return nil
+}
+
+func (host *Host) Kill() error {
+	log.Traceln("--> server.Host.Kill")
+	if host.shell != nil {
+		err := host.shell.Process.Kill()
+		host.shell = nil
+		return err
+	} else {
+		return errors.New("no shell running")
+	}
 }

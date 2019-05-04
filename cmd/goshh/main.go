@@ -7,8 +7,10 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
+	"golang.org/x/sys/unix"
 	"net"
 	"os"
+	"os/signal"
 )
 
 func main() {
@@ -32,24 +34,41 @@ func main() {
 
 	config := server.LoadConfig(*configPath)
 	config.Set("Authentication.KeyStore", *authPath)
-	hst := server.NewHost(config)
+	host := server.NewHost(config)
 
-	if err := hst.LoadCertKeyPair(*certFile, *keyFile); err != nil {
+	go func() {
+		sigChan := make(chan os.Signal)
+		signal.Notify(sigChan, unix.SIGINT)
+		log.WithField("sig", (<-sigChan).String()).Warnln("Received signal. Shutting down.")
+		cleanup(host)
+	}()
+
+	if err := host.LoadCertKeyPair(*certFile, *keyFile); err != nil {
 		log.WithError(err).Fatalln("Failed to prepare hosting.")
 	}
 	peerAddr, err := net.ResolveTCPAddr(common.TCP, *rAddr)
 	if err != nil {
 		log.WithError(err).Fatalln("Failed to resolve remote client address.")
 	}
-	if err := hst.Connect(uintptr(*fd), peerAddr); err != nil {
+	if err := host.Connect(uintptr(*fd), peerAddr); err != nil {
 		log.WithError(err).Fatalln("Failed to prepare hosting.")
 	}
-	if err := hst.Setup(); err != nil {
+	if err := host.Setup(); err != nil {
 		log.WithError(err).Fatalln("Failed to setup host.")
 	}
-	if err := hst.Serve(); err != nil {
+	if err := host.Serve(); err != nil {
 		log.WithError(err).Fatalln("Hosting exited with an error.")
 	}
+}
+
+func cleanup(host server.Host) {
+	log.WithField("host", host).Traceln("--> main.cleanup")
+	if err := host.Kill(); err != nil {
+		log.WithError(err).WithField("host", host).Warnln("Failed to send interrupt to shell.")
+	} else {
+		log.WithField("host", host).Infoln("Sent interrupt to shell.")
+	}
+	os.Exit(0)
 }
 
 func init() {

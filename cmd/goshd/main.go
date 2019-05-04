@@ -7,10 +7,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/common"
 	"github.engineering.zhaw.ch/neut/oh-my-gosh/pkg/server"
+	"golang.org/x/sys/unix"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path"
 	"strconv"
-	"syscall"
 )
 
 func main() {
@@ -32,44 +34,51 @@ func main() {
 	config.Set("Authentication.KeyStore", *authPath)
 	srvr := server.NewServer(config)
 
-	var children []uintptr
+	var children []*exec.Cmd
+	go func() {
+		sigChan := make(chan os.Signal)
+		signal.Notify(sigChan, unix.SIGINT)
+		log.WithField("sig", (<-sigChan).String()).Warnln("Received signal. Shutting down.")
+		cleanup(children)
+	}()
 	fdChan := make(chan server.RemoteHandle)
 	defer close(fdChan)
 	go srvr.AwaitConnections(fdChan)
 	for remoteHandle := range fdChan {
 		log.WithField("remoteHandle", remoteHandle).Debugln("Got a remote handle.")
-		bin := path.Join(path.Dir(os.Args[0]), "goshh")
-		args := []string{bin,
+		host := exec.Command(path.Join(path.Dir(os.Args[0]), "goshh"),
 			"--conf", *configPath,
 			"--auth", *authPath,
 			"--cert", *certFile,
 			"--key", *keyFile,
 			"--fd", strconv.FormatUint(uint64(remoteHandle.Fd), 10),
-			"--remote", remoteHandle.RemoteAddr.String(),
-		}
-		pid, err := syscall.ForkExec(bin, args, &syscall.ProcAttr{
-			Env: []string{
-				fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String()),
-			},
-			Files: []uintptr{
-				uintptr(os.Stdin.Fd()),
-				uintptr(os.Stdout.Fd()),
-				uintptr(os.Stderr.Fd()),
-			},
-		})
+			"--remote", remoteHandle.RemoteAddr.String())
+		host.Env = []string{fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String())}
+		host.Stdin = os.Stdin
+		host.Stdout = os.Stdout
+		host.Stderr = os.Stderr
+		err := host.Start()
 		if err != nil {
-			log.WithError(err).Fatalln("Failed to forkexec child")
-		}
-		log.WithField("pid", pid).Infoln("Forkexeced child.")
-		children = append(children, uintptr(pid))
-		log.WithFields(log.Fields{
-			"children": children,
-			"pid":      pid,
-		}).Debugln("Added child pid to array.")
-	}
-	for pid := range children {
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			log.WithError(err).Errorln("Failed to kill child.")
+			log.WithError(err).Errorln("Failed to start child")
+		} else {
+			log.WithField("pid", host.Process.Pid).Infoln("Started child.")
+			children = append(children, host)
+			log.WithFields(log.Fields{
+				"children": children,
+				"host":     host,
+			}).Debugln("Added child process to array.")
 		}
 	}
+}
+
+func cleanup(children []*exec.Cmd) {
+	log.WithField("children", children).Traceln("--> main.cleanup")
+	for _, host := range children {
+		if err := host.Process.Signal(unix.SIGINT); err != nil {
+			log.WithError(err).WithField("host", host).Warnln("Failed to interrupt to child.")
+		} else {
+			log.WithField("host", host).Infoln("Sent interrupt to child.")
+		}
+	}
+	os.Exit(0)
 }
