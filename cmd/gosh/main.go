@@ -40,7 +40,6 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	go utils.Forward(os.Stdin, conn, "stdin", "server")
 	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		log.WithError(err).Fatalln("Failed to set terminal into raw mode.")
@@ -54,6 +53,7 @@ func main() {
 		}
 	}()
 
+	go utils.Forward(os.Stdin, conn, "stdin", "server")
 	utils.Forward(conn, os.Stdout, "server", "stdout")
 }
 

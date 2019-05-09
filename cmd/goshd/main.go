@@ -41,18 +41,18 @@ func main() {
 		log.WithField("sig", (<-sigChan).String()).Warnln("Received signal. Shutting down.")
 		cleanup(children)
 	}()
-	fdChan := make(chan server.RemoteHandle)
-	defer close(fdChan)
-	go srvr.AwaitConnections(fdChan)
-	for remoteHandle := range fdChan {
-		log.WithField("remoteHandle", remoteHandle).Debugln("Got a remote handle.")
+	remoteChan := make(chan server.RemoteHandle)
+	defer close(remoteChan)
+	go srvr.AwaitConnections(remoteChan)
+	for remote := range remoteChan {
+		log.WithField("remote", remote).Debugln("Got a remote handle.")
 		host := exec.Command(path.Join(path.Dir(os.Args[0]), "goshh"),
 			"--conf", *configPath,
 			"--auth", *authPath,
 			"--cert", *certFile,
 			"--key", *keyFile,
-			"--fd", strconv.FormatUint(uint64(remoteHandle.Fd), 10),
-			"--remote", remoteHandle.RemoteAddr.String())
+			"--fd", strconv.FormatUint(uint64(remote.Fd), 10),
+			"--remote", remote.RemoteAddr.String())
 		host.Env = []string{fmt.Sprintf("LOG_LEVEL=%s", log.GetLevel().String())}
 		host.Stdin = os.Stdin
 		host.Stdout = os.Stdout
