@@ -149,16 +149,16 @@ func (host *Host) Setup() error {
 
 func (host *Host) Serve() error {
 	log.Traceln("--> host.Host.Serve")
-	cmd, err := host.StartShell()
-	if err != nil {
-		log.WithError(err).Errorln("Failed to serve client.")
-		return err
-	}
 	defer func() {
 		utils.CloseFile(host.pts)
 		utils.CloseFile(host.ptm)
 		utils.CloseConn(host.conn)
 	}()
+	cmd, err := host.StartShell()
+	if err != nil {
+		log.WithError(err).Errorln("Failed to serve client.")
+		return err
+	}
 
 	// TODO: Handle forwarding yourself.
 	go utils.Forward(host.ptm, host.conn, "ptm", "client")
@@ -189,7 +189,8 @@ func (host *Host) StartShell() (cmd *exec.Cmd, err error) {
 				cmd, err = host.login()
 			}
 		} else {
-			pwd, err := passwd.GetPwByName(host.userName)
+			var pwd *passwd.PassWd
+			pwd, err = passwd.GetPwByName(host.userName)
 			if err != nil {
 				log.WithError(err).Errorln("Failed to log in with keys.")
 			} else {
